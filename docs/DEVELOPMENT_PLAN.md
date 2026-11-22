@@ -33,7 +33,7 @@ Facts from `talmolab/sleap-app` at commit `368db85` (2026-11-19, v0.1.2) unless 
 | Pace | 50 commits in 16 days (Nov 3 to 19, 2026), about 3 merged PRs a day. | Keep the PR stack short and rebase weekly. |
 | License | BSD-3-Clause. | Vendoring and contributing are fine. |
 
-From `talmolab/sleap-nn` 0.3.5 (commit `1537a2a`, 2026-11-11):
+For reference only, since sleap-nn and the container are handled separately. From `talmolab/sleap-nn` 0.3.5 (commit `1537a2a`, 2026-11-11):
 
 - Trained models load from **local disk only**. `resolve_model_dir` in `sleap_nn/config/utils.py` accepts a model folder or the `best.ckpt` / `training_config.yaml` inside it, and raises `FileNotFoundError` for anything else.
 - `--data_path` already accepts `http(s)`, `s3`, `gs`, `gcs`, `az` and `abfs` URLs (`_REMOTE_URL_SCHEMES` in `sleap_nn/cli.py`). It chooses `.slp` vs. video by the URL's file extension, so extensionless blob URLs need a declared type or a download step.
@@ -193,7 +193,7 @@ Order and process:
 Other repositories:
 
 - `talmolab/sleap-io.js`: possibly a small PR for declared file types in the streaming reader (PR 2).
-- `talmolab/sleap-nn`: optional. A declared input type for URL `--data_path`, and `https://` / `hf://` model paths with checksums. Not needed if the proxy team's container downloads files to local disk first.
+- `talmolab/sleap-nn`: out of scope for this plan. sleap-nn changes, its licensing and the SLEAP container are handled separately.
 
 ## ember-sleap work (this repository)
 
@@ -276,7 +276,6 @@ M1 to M4 is the end-to-end prototype with stubbed compute (about 5 to 8 weeks). 
 ## Open questions
 
 - [ ] **Talmo Lab:** agree the component contract (mount options, host callbacks) and the PR order.
-- [ ] **Talmo Lab:** clarify the sleap-nn license (`LICENSE` is GPLv3, `pyproject.toml` says BSD-3-Clause).
 - [ ] **EMBER admins:** register a public OAuth app for ember-sleap with every serving URL as a redirect URI, including PR previews.
 - [ ] **EMBER data team:** approve the `derivatives/sleap/` layout; confirm drafts holding `.slp` and `.ckpt` files can be published.
 - [ ] **Proxy team:** caller auth, job API, file-type metadata on input URLs, result locations, who finishes the SLEAP Pennsieve app.
