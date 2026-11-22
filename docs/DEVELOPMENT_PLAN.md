@@ -117,13 +117,13 @@ export interface ModelCard {
 }
 ```
 
-</details>
-
 Notes:
 
 - `TrainJobSpec` and `TrackJobSpec` are upstream's existing job types (`src/lib/sleapConnect.ts`), so the training and inference dialogs stay upstream's. For us, `labels_path`, `data_path` and `model_paths` hold EMBER URLs and model references instead of worker paths.
 - `JobEvent` mirrors the events the job viewer already consumes (`job.status`, `job.log`, `job.result`, `job.epoch`).
 - The app keeps 18 module-level state stores, so only one instance can be mounted per page. That is fine for us.
+
+</details>
 
 ## Upstream changes needed
 
