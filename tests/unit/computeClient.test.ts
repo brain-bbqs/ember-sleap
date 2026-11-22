@@ -12,7 +12,15 @@ const BASE = "https://proxy.test/v1/";
 const REQUEST: JobRequest = {
   spec: { type: "track", data_path: "https://s3.test/blob", model_paths: ["hf:lab/mice"] },
   inputs: [{ url: "https://s3.test/blob", fileType: "mp4", name: "session1.mp4" }],
-  models: [{ id: "hf:lab/mice", files: [{ role: "config", url: "https://hf.test/training_config.yaml" }] }],
+  models: [
+    {
+      id: "hf:lab/mice",
+      files: [
+        { role: "config", folder: "", url: "https://hf.test/training_config.yaml" },
+        { role: "checkpoint", folder: "", url: "https://hf.test/best.ckpt" },
+      ],
+    },
+  ],
   project: { dandisetId: "000398", path: "sub-NONE/sub-NONE_sourcedata.slp" },
 };
 

@@ -105,10 +105,26 @@ An inference job:
     {
       "id": "hf:talmolab/mice-topdown",
       "files": [
-        { "role": "config", "url": "https://huggingface.co/talmolab/mice-topdown/resolve/main/training_config.yaml" },
+        {
+          "role": "config",
+          "folder": "centroid",
+          "url": "https://huggingface.co/talmolab/mice-topdown/resolve/3f2a…/centroid/training_config.yaml"
+        },
         {
           "role": "checkpoint",
-          "url": "https://huggingface.co/talmolab/mice-topdown/resolve/main/best.ckpt",
+          "folder": "centroid",
+          "url": "https://huggingface.co/talmolab/mice-topdown/resolve/3f2a…/centroid/best.ckpt",
+          "sha256": "…"
+        },
+        {
+          "role": "config",
+          "folder": "centered_instance",
+          "url": "https://huggingface.co/talmolab/mice-topdown/resolve/3f2a…/centered_instance/training_config.yaml"
+        },
+        {
+          "role": "checkpoint",
+          "folder": "centered_instance",
+          "url": "https://huggingface.co/talmolab/mice-topdown/resolve/3f2a…/centered_instance/best.ckpt",
           "sha256": "…"
         }
       ]
@@ -118,12 +134,12 @@ An inference job:
 }
 ```
 
-| Field     | Meaning                                                                                                                                      |
-| --------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| `spec`    | SLEAP's job spec. `type` is `"train"` or `"track"`.                                                                                          |
-| `inputs`  | Every URL the spec names, each with its `fileType` (`slp`, `pkg.slp`, `mp4`, `avi` or `h5`), a display `name` and its EMBER `archive` asset. |
-| `models`  | For a track job, each id in `model_paths` expanded to the files the worker must fetch: `config` and `checkpoint`, with `sha256` when known.  |
-| `project` | The dandiset results are written back to, and the EMBER path of the project the job came from.                                               |
+| Field     | Meaning                                                                                                                                                            |
+| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `spec`    | SLEAP's job spec. `type` is `"train"` or `"track"`.                                                                                                                |
+| `inputs`  | Every URL the spec names, each with its `fileType` (`slp`, `pkg.slp`, `mp4`, `avi` or `h5`), a display `name` and its EMBER `archive` asset.                       |
+| `models`  | For a track job, each id in `model_paths` expanded to the files the worker must fetch: a `config` and a `checkpoint` per model `folder`, with `sha256` when known. |
+| `project` | The dandiset results are written back to, and the EMBER path of the project the job came from.                                                                     |
 
 - **File types are declared, never guessed.** EMBER download links and S3 blob URLs have no file extension, and sleap-nn picks `.slp` versus video handling from the extension of `--data_path`.
   The proxy (or the container) must use `fileType`, for example by downloading to a local file named with the right extension before calling sleap-nn.
@@ -159,7 +175,8 @@ Each event has the same shape sleap-app's job viewer already consumes from SLEAP
 
 - A train result's `model_dir` is the trained model's card id, `ember:<dandisetId>/<model_id>` (the id the page's EMBER model source gives the folder), so sleap-app can name it in a follow-up track job's `model_paths`.
   `model_path` is the same folder relative to the dandiset (`derivatives/sleap/models/<model_id>/`), and `labels_path` echoes the spec's `labels_path`, which sleap-app uses as that track job's `data_path`.
-- A track job naming a card the page has not listed makes the page list models once more before it refuses the job, so the proxy must have written the model folder (with its `training_config.yaml`) to the draft before it reports the train result.
+  The page resolves `model_dir` even when an index entry for the same folder has taken its place in the model list.
+- A track job naming a card the page has not listed makes the page list models once more before it refuses the job, so the proxy must have written the model folder (its `training_config.yaml` and `best.ckpt`, in each head's subfolder when the job trained several) to the draft before it reports the train result.
   The in-browser stub writes nothing, so it lists the models it trained itself, under the same ids.
 - A track result's `predictions` are paths relative to the dandiset, in the layout under [Inputs, models and results](#inputs-models-and-results).
   Once the job's `completed` status arrives, the page lists each one under the app, to open and proofread, as a file in the dandiset the job was submitted from (`project.dandisetId` in the request).
@@ -172,14 +189,16 @@ Each event has the same shape sleap-app's job viewer already consumes from SLEAP
 
 ## Inputs, models and results
 
-- **Models load from local disk.** sleap-nn's `resolve_model_dir` accepts only a local model folder (or the `best.ckpt` / `training_config.yaml` in it).
-  The proxy or container downloads each model's files into a folder before calling `sleap-nn track`, and checks `sha256` when given.
+- **Models load from local disk, one folder per head.** sleap-nn's `resolve_model_dir` accepts only a local model folder (or the `best.ckpt` / `training_config.yaml` in it), and a model folder holds one head.
+  A single-head model is one folder; a top-down model is two, its centroid and centered-instance folders, and inference needs both.
+  Every file of `models[].files` names its folder (`folder`, a path below where the model is kept: `""` for one kept at the top, e.g. `"centroid"` and `"centered_instance"` for a top-down one), each folder has exactly one `config` and one `checkpoint`, and only a top-down model has two folders.
+  The proxy or container downloads each folder into a local directory of its own, saving the config as `training_config.yaml` and the checkpoint as `best.ckpt` (an EMBER download URL carries no file name), checks `sha256` when given, and passes every folder of every model in `model_paths` to `sleap-nn track`, one `--model_paths` each.
 - **Model file URLs** are one of:
   - `https://huggingface.co/<repo>/resolve/<revision>/<file>`: public repos need no token; **gated repos need a Hugging Face token held on the proxy side**, never sent from the browser.
   - `https://api-dandi.emberarchive.org/api/assets/{asset_id}/download/`: an EMBER asset the service account downloads with its own EMBER credentials.
-  - `ember://<dandiset>/<path>`: an EMBER asset named by dandiset and path rather than id, for entries in the central model index; the proxy resolves it through the EMBER API.
+  - `ember://<dandiset>/<path>`: an EMBER asset named by dandiset and path rather than id, each path segment percent-encoded, for entries in the central model index; the proxy decodes the path and resolves it through the EMBER API.
 - **Results go back to EMBER** in the source dandiset's draft, under `derivatives/sleap/`, written by the service account:
-  - trained models under `derivatives/sleap/models/<model-id>/` (`training_config.yaml`, `best.ckpt`, and a `model_card.json`);
+  - trained models under `derivatives/sleap/models/<model-id>/` (`training_config.yaml`, `best.ckpt`, and a `model_card.json`); a job training several heads, as top-down's `centroid` and `centered_instance`, writes each head's `training_config.yaml` and `best.ckpt` to a subfolder named after it, with one `model_card.json` listing every head in `models/<model-id>/` ([MODEL_INDEX.md](MODEL_INDEX.md#model-folders-on-ember-model_cardjson));
   - predictions as `derivatives/sleap/sub-<label>/[ses-<label>/]beh/sub-<label>[_ses-<label>][_task-…][_acq-…][_run-…][_recording-…]_desc-predictions<Source>_pose.slp`, named the way the page names labels files ([BIDS derivatives layout](DEVELOPMENT_PLAN.md#bids-derivatives-layout); `predictionsPath` in `src/lib/bidsDerivatives.ts`), so each project's predictions sit beside its own labels file and two projects of one session never share one.
     The subject, session, kept entities and `<Source>` come from `project.path` when it names the subject, else from the input's name; a job where neither gives its subject (and any session it names) as BIDS labels fails rather than inventing a folder.
   - Each result records the requesting EMBER user and the job id in its provenance (for example in the asset metadata's `wasGeneratedBy`).

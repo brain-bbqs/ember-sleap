@@ -223,6 +223,7 @@ test.describe("EMBER storage", () => {
     const archive = await routeArchive(page, [
       { asset_id: "a1", path: "sub-01/ses-02/beh/cam-top.pkg.slp", size: 64 },
       { asset_id: "m1", path: "derivatives/sleap/models/mouse/training_config.yaml", size: 1 },
+      { asset_id: "m2", path: "derivatives/sleap/models/mouse/best.ckpt", size: 1 },
     ]);
     const downloads: string[] = [];
     page.on("request", (request) => {

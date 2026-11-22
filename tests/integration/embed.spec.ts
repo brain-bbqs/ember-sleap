@@ -71,6 +71,31 @@ test.describe("the embedded SLEAP app", () => {
     await expect(role(page, "job-log")).toContainText("Model: ember:mock/stub-model-1");
   });
 
+  test("predicts with a top-down model, sending both of its model folders", async ({ page }) => {
+    await openMockProject(page);
+    await role(page, "list-models").click();
+    const topDown = role(page, "models").locator("li", { hasText: "Test injection model (top-down)" });
+    await expect(topDown).toContainText("centroid, centered_instance");
+    await topDown.locator('[data-role="predict"]').click();
+    await expect(role(page, "job-state")).toHaveText("completed");
+    const log = role(page, "job-log");
+    await expect(log).toContainText("Model: mock:top-down");
+    await expect(log).toContainText(
+      "model folder centroid: config data:,mock-centroid-config; checkpoint data:,mock-centroid-checkpoint",
+    );
+    await expect(log).toContainText(
+      "model folder centered_instance: config data:,mock-centered-instance-config; checkpoint data:,mock-centered-instance-checkpoint",
+    );
+
+    // A model trained here says it is kept on EMBER, as the EMBER source lists its folder.
+    await role(page, "train").click();
+    await expect(role(page, "job-state")).toHaveText("completed");
+    await role(page, "list-models").click();
+    await expect(role(page, "models").locator("li").last()).toContainText(
+      "stub-model-2 (trained here on the stub) single_instance · from EMBER dandiset mock",
+    );
+  });
+
   test("opens the predictions an inference job wrote, and saves them proofread as labels beside them", async ({
     page,
   }) => {

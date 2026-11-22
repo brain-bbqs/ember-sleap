@@ -18,31 +18,42 @@ function hubModel(overrides: Record<string, unknown> = {}): Record<string, unkno
       { rfilename: "README.md" },
       { rfilename: "centroid/training_config.yaml" },
       { rfilename: "centroid/best.ckpt" },
-      { rfilename: "training_config.yaml" },
-      { rfilename: "best.ckpt" },
+      { rfilename: "centered_instance/training_config.yaml" },
+      { rfilename: "centered_instance/best.ckpt" },
+      { rfilename: "drafts/training_config.yaml" },
       { rfilename: "my model/best.ckpt" },
+      { rfilename: "centroid/last.ckpt" },
     ],
     ...overrides,
   };
 }
 
+/** A model folder's two files on the Hub, as rfilenames. */
+const folderSiblings = (prefix: string) => [
+  { rfilename: `${prefix}training_config.yaml` },
+  { rfilename: `${prefix}best.ckpt` },
+];
+
 describe("mapHubModel", () => {
-  it("maps a full listing entry to a card", () => {
-    expect(mapHubModel(hubModel(), HUB)).toEqual({
-      id: "hf:talmolab/mouse-topdown",
-      name: "talmolab/mouse-topdown",
-      license: "cc-by-4.0",
-      species: "Mus musculus",
-      heads: ["centroid", "centered_instance"],
-      skeleton: { nodes: ["nose", "tail"], edges: [["nose", "tail"]] },
-      files: [
-        { role: "config", url: `${HUB}/talmolab/mouse-topdown/resolve/abc123/centroid/training_config.yaml` },
-        { role: "checkpoint", url: `${HUB}/talmolab/mouse-topdown/resolve/abc123/centroid/best.ckpt` },
-        { role: "config", url: `${HUB}/talmolab/mouse-topdown/resolve/abc123/training_config.yaml` },
-        { role: "checkpoint", url: `${HUB}/talmolab/mouse-topdown/resolve/abc123/best.ckpt` },
-        { role: "checkpoint", url: `${HUB}/talmolab/mouse-topdown/resolve/abc123/my%20model/best.ckpt` },
-      ],
-    });
+  it("maps a top-down listing entry to a card holding both model folders, leaving incomplete ones out", () => {
+    const base = `${HUB}/talmolab/mouse-topdown/resolve/abc123`;
+    expect(mapHubModel(hubModel(), HUB)).toEqual([
+      {
+        id: "hf:talmolab/mouse-topdown",
+        name: "talmolab/mouse-topdown",
+        license: "cc-by-4.0",
+        species: "Mus musculus",
+        heads: ["centroid", "centered_instance"],
+        skeleton: { nodes: ["nose", "tail"], edges: [["nose", "tail"]] },
+        files: [
+          { role: "config", folder: "centroid", url: `${base}/centroid/training_config.yaml` },
+          { role: "checkpoint", folder: "centroid", url: `${base}/centroid/best.ckpt` },
+          { role: "config", folder: "centered_instance", url: `${base}/centered_instance/training_config.yaml` },
+          { role: "checkpoint", folder: "centered_instance", url: `${base}/centered_instance/best.ckpt` },
+        ],
+        source: { kind: "huggingface", repo: "talmolab/mouse-topdown", revision: "abc123" },
+      },
+    ]);
   });
 
   it("falls back to modelId, the main revision, and the license tag, leaving out what is missing", () => {
@@ -52,40 +63,94 @@ describe("mapHubModel", () => {
         sha: "",
         tags: ["license:apache-2.0", 7, "bottomup"],
         cardData: { license: "", species: "", skeleton: { nodes: ["a"], edges: [["a", "b"]] } },
-        siblings: [{ rfilename: "training_config.yaml" }],
+        siblings: [...folderSiblings(""), { rfilename: "my model/best.ckpt" }],
       },
       HUB,
     );
-    expect(card).toEqual({
-      id: "hf:lab/fly",
-      name: "lab/fly",
-      license: "apache-2.0",
-      heads: ["bottomup"],
-      files: [{ role: "config", url: `${HUB}/lab/fly/resolve/main/training_config.yaml` }],
-    });
+    expect(card).toEqual([
+      {
+        id: "hf:lab/fly",
+        name: "lab/fly",
+        license: "apache-2.0",
+        heads: ["bottomup"],
+        files: [
+          { role: "config", folder: "", url: `${HUB}/lab/fly/resolve/main/training_config.yaml` },
+          { role: "checkpoint", folder: "", url: `${HUB}/lab/fly/resolve/main/best.ckpt` },
+        ],
+        source: { kind: "huggingface", repo: "lab/fly", revision: "main" },
+      },
+    ]);
   });
 
   it("tolerates missing tags, card data and siblings that are not file entries", () => {
-    const card = mapHubModel(
-      { id: "lab/bare", siblings: ["x", { rfilename: 3 }, { rfilename: "training_config.yaml" }] },
-      HUB,
-    );
-    expect(card).toEqual({
-      id: "hf:lab/bare",
-      name: "lab/bare",
-      heads: [],
-      files: [{ role: "config", url: `${HUB}/lab/bare/resolve/main/training_config.yaml` }],
-    });
+    const card = mapHubModel({ id: "lab/bare", siblings: ["x", { rfilename: 3 }, ...folderSiblings("m/")] }, HUB);
+    expect(card).toEqual([
+      {
+        id: "hf:lab/bare",
+        name: "lab/bare",
+        heads: [],
+        files: [
+          { role: "config", folder: "m", url: `${HUB}/lab/bare/resolve/main/m/training_config.yaml` },
+          { role: "checkpoint", folder: "m", url: `${HUB}/lab/bare/resolve/main/m/best.ckpt` },
+        ],
+        source: { kind: "huggingface", repo: "lab/bare", revision: "main" },
+      },
+    ]);
+  });
+
+  it.each([
+    ["single-head models", ["sleap-nn", "single_instance"]],
+    ["models of unknown heads", ["sleap-nn"]],
+  ])("lists a repository holding several %s as one card per folder, named after it", (_label, tags) => {
+    const siblings = [...folderSiblings("fly/"), ...folderSiblings(""), ...folderSiblings("old/mouse/")];
+    const cards = mapHubModel(hubModel({ id: "lab/zoo", tags, siblings }), HUB);
+    const base = `${HUB}/lab/zoo/resolve/abc123`;
+    expect(cards.map((card) => typeof card === "object" && [card.id, card.name, card.files])).toEqual([
+      [
+        "hf:lab/zoo/fly",
+        "lab/zoo/fly",
+        [
+          { role: "config", folder: "fly", url: `${base}/fly/training_config.yaml` },
+          { role: "checkpoint", folder: "fly", url: `${base}/fly/best.ckpt` },
+        ],
+      ],
+      ["hf:lab/zoo", "lab/zoo", expect.arrayContaining([expect.objectContaining({ folder: "" })])],
+      [
+        "hf:lab/zoo/old/mouse",
+        "lab/zoo/old/mouse",
+        expect.arrayContaining([expect.objectContaining({ folder: "old/mouse" })]),
+      ],
+    ]);
+  });
+
+  it("lists an untagged repository whose two folders are named after top-down's heads as one card", () => {
+    const siblings = [...folderSiblings("centroid/"), ...folderSiblings("centered_instance/")];
+    const cards = mapHubModel(hubModel({ tags: ["sleap-nn"], siblings }), HUB);
+    expect(cards.map((card) => typeof card === "object" && [card.id, card.heads, card.files.length])).toEqual([
+      ["hf:talmolab/mouse-topdown", [], 4],
+    ]);
   });
 
   it.each([
     ["not an object", "lab/model"],
-    ["missing an id", { siblings: [{ rfilename: "training_config.yaml" }] }],
-    ["an empty id", { id: "", siblings: [{ rfilename: "training_config.yaml" }] }],
+    ["missing an id", { siblings: folderSiblings("") }],
+    ["an empty id", { id: "", siblings: folderSiblings("") }],
     ["without a config", hubModel({ siblings: [{ rfilename: "best.ckpt" }] })],
+    ["without a checkpoint", hubModel({ siblings: [{ rfilename: "training_config.yaml" }] })],
+    [
+      "whose files sit in different folders",
+      hubModel({ siblings: [{ rfilename: "a/best.ckpt" }, ...folderSiblings("b/").slice(0, 1)] }),
+    ],
     ["without siblings", hubModel({ siblings: undefined })],
-  ])("returns null for an entry %s", (_label, model) => {
-    expect(mapHubModel(model, HUB)).toBe(null);
+  ])("lists nothing for an entry %s", (_label, model) => {
+    expect(mapHubModel(model, HUB)).toEqual([]);
+  });
+
+  it("says why a top-down model without a folder per head is left out", () => {
+    const model = hubModel({ siblings: folderSiblings("centroid/") });
+    expect(mapHubModel(model, HUB)).toEqual([
+      'Model "hf:talmolab/mouse-topdown": a top-down model (centroid and centered_instance) needs two model folders, one per head, not 1.',
+    ]);
   });
 });
 
@@ -124,15 +189,40 @@ describe("createHuggingFaceSource", () => {
 
   it("asks the Hub for every model carrying the tag, with card data, and maps them, whatever the text", async () => {
     const fetch = respond(200, [hubModel(), hubModel({ id: "lab/no-config", siblings: [] })]);
+    const onProblems = vi.fn();
     const signal = new AbortController().signal;
-    const source = createHuggingFaceSource({ fetch, hubUrl: `${HUB}/`, tag: "sleap-nn", limit: 10 });
+    const source = createHuggingFaceSource({ fetch, hubUrl: `${HUB}/`, tag: "sleap-nn", limit: 10, onProblems });
     expect(source.name).toBe("Hugging Face");
     const models = await source.list({ text: "  musculus " }, signal);
     expect(models.map((m) => m.id)).toEqual(["hf:talmolab/mouse-topdown"]);
+    expect(onProblems).not.toHaveBeenCalled();
     expect(fetch).toHaveBeenCalledTimes(1);
     expect(fetch).toHaveBeenCalledWith(`${HUB}/api/models?filter=sleap-nn&full=true&cardData=true&limit=10`, {
       signal,
     });
+  });
+
+  it("reports the models it left out across pages, once per listing", async () => {
+    const lopsided = (id: string) => hubModel({ id, siblings: folderSiblings("centroid/") });
+    const fetch = pages([lopsided("lab/a"), hubModel({ id: "lab/b" })], [lopsided("lab/c")]);
+    const onProblems = vi.fn();
+    const models = await createHuggingFaceSource({ fetch, hubUrl: HUB, onProblems }).list({});
+    expect(models.map((m) => m.id)).toEqual(["hf:lab/b"]);
+    expect(onProblems).toHaveBeenCalledTimes(1);
+    expect(onProblems).toHaveBeenCalledWith([
+      expect.stringMatching(/^Model "hf:lab\/a": a top-down model/),
+      expect.stringMatching(/^Model "hf:lab\/c": a top-down model/),
+    ]);
+  });
+
+  it("warns on the console about models it left out by default", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const fetch = respond(200, [hubModel({ siblings: folderSiblings("") })]);
+    expect(await createHuggingFaceSource({ fetch, hubUrl: HUB }).list({})).toEqual([]);
+    expect(warn).toHaveBeenCalledWith("Hugging Face models left out:", [
+      expect.stringContaining('Model "hf:talmolab/mouse-topdown"'),
+    ]);
+    warn.mockRestore();
   });
 
   it("lets the picker's text find a model by the species on its card, not only by its id", async () => {

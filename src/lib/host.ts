@@ -167,8 +167,10 @@ export function createSleapHost({ storage, modelSources, compute, onModelWarning
   };
 
   async function listAll(query: ModelQuery): Promise<ModelCard[]> {
-    const listed = await listModels(modelSources, query, { onWarning: onModelWarning });
-    for (const card of listed) cards.set(card.id, card);
+    // A listing an index entry replaced stays known by its own id, as a train result's model_dir names it.
+    const remember = (card: ModelCard) => cards.set(card.id, card);
+    const listed = await listModels(modelSources, query, { onWarning: onModelWarning, onReplaced: remember });
+    listed.forEach(remember);
     return listed;
   }
 

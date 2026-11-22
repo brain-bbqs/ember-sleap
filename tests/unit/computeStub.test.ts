@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { INLINE_LABELS_REFUSED, TRAIN_NEEDS_LABELS, type JobRequest } from "../../src/lib/computeClient";
 import { createStubCompute } from "../../src/lib/computeStub";
+import { MOCK_MODELS } from "../../src/lib/testInjection";
 import type { JobEvent } from "../../src/lib/sleapContract";
 
 const LABELS_URL = "https://s3.test/blobs/labels";
@@ -198,6 +199,31 @@ describe("createStubCompute", () => {
     ]);
   });
 
+  it("names each model folder a worker would download, with its files", async () => {
+    const { stub, drain } = steppedStub();
+    const [single, topDown] = MOCK_MODELS;
+    const request: JobRequest = {
+      ...trackRequest,
+      spec: { type: "track", data_path: VIDEO_URL, model_paths: [topDown.id, single.id, "hf:lab/unexpanded"] },
+      models: [single, topDown].map(({ id, files }) => ({ id, files })),
+    };
+    const { jobId } = await stub.submit(request);
+    const lines: unknown[] = [];
+    stub.subscribe(jobId, (e) => {
+      if (e.topic === "job.log") lines.push(e.data.line);
+    });
+    drain();
+
+    expect(lines.slice(1)).toEqual([
+      "Model: mock:top-down",
+      "  model folder centroid: config data:,mock-centroid-config; checkpoint data:,mock-centroid-checkpoint",
+      "  model folder centered_instance: config data:,mock-centered-instance-config; checkpoint data:,mock-centered-instance-checkpoint",
+      "Model: mock:single-instance",
+      "  model folder (top level): config data:,mock-single-instance-config; checkpoint data:,mock-single-instance-checkpoint",
+      "Model: hf:lab/unexpanded",
+    ]);
+  });
+
   it.each([
     [
       "the project's folders",
@@ -326,10 +352,35 @@ describe("createStubCompute", () => {
         name: "stub-model-2 (trained here on the stub)",
         heads: ["single_instance"],
         files: [
-          { role: "config", url: "ember://000398/derivatives/sleap/models/stub-model-2/training_config.yaml" },
-          { role: "checkpoint", url: "ember://000398/derivatives/sleap/models/stub-model-2/best.ckpt" },
+          {
+            role: "config",
+            folder: "",
+            url: "ember://000398/derivatives/sleap/models/stub-model-2/training_config.yaml",
+          },
+          { role: "checkpoint", folder: "", url: "ember://000398/derivatives/sleap/models/stub-model-2/best.ckpt" },
         ],
+        source: { kind: "ember", dandisetId: "000398", path: "derivatives/sleap/models/stub-model-2" },
       },
+    ]);
+  });
+
+  it("lists a model trained as several heads with a model folder per head, as the EMBER source reads one", async () => {
+    const { stub, drain } = steppedStub();
+    const model_types = ["centroid", "centered_instance"];
+    await stub.submit({
+      ...trainRequest(),
+      spec: { type: "train", config_contents: [], model_types, labels_path: LABELS_URL },
+    });
+    drain();
+
+    const [card] = await stub.models.list({});
+    const root = "ember://000398/derivatives/sleap/models/stub-model-1";
+    expect(card.heads).toEqual(["centroid", "centered_instance"]);
+    expect(card.files).toEqual([
+      { role: "config", folder: "centroid", url: `${root}/centroid/training_config.yaml` },
+      { role: "checkpoint", folder: "centroid", url: `${root}/centroid/best.ckpt` },
+      { role: "config", folder: "centered_instance", url: `${root}/centered_instance/training_config.yaml` },
+      { role: "checkpoint", folder: "centered_instance", url: `${root}/centered_instance/best.ckpt` },
     ]);
   });
 

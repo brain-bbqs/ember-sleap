@@ -10,7 +10,7 @@
 import { predictionsPath } from "./bidsDerivatives";
 import { toHostRef } from "./hostRef";
 import type { ModelSource } from "./modelCatalogue";
-import type { ModelCard, OpenRequest } from "./sleapContract";
+import type { ModelCard, ModelFile, OpenRequest } from "./sleapContract";
 
 export interface TestInjection {
   /** Opens a synthesized project into the embedded app, with in-memory saves, two fixed models
@@ -63,6 +63,15 @@ export function mockProjectRequest(): OpenRequest {
   };
 }
 
+/** A model folder's config and checkpoint, as `data:` URLs that name them and that nothing fetches. */
+function mockFolder(folder: string, label: string): ModelFile[] {
+  return [
+    { role: "config", folder, url: `data:,mock-${label}-config` },
+    { role: "checkpoint", folder, url: `data:,mock-${label}-checkpoint` },
+  ];
+}
+
+/** One model of each shape: a single model folder, and top-down's two folders, one per head. */
 export const MOCK_MODELS: readonly ModelCard[] = [
   {
     id: "mock:single-instance",
@@ -71,13 +80,13 @@ export const MOCK_MODELS: readonly ModelCard[] = [
     species: "mouse",
     heads: ["single_instance"],
     skeleton: { nodes: ["head", "tail"], edges: [["head", "tail"]] },
-    files: [{ role: "config", url: "data:,mock-config" }],
+    files: mockFolder("", "single-instance"),
   },
   {
     id: "mock:top-down",
     name: "Test injection model (top-down)",
     heads: ["centroid", "centered_instance"],
-    files: [{ role: "config", url: "data:,mock-config" }],
+    files: [...mockFolder("centroid", "centroid"), ...mockFolder("centered_instance", "centered-instance")],
   },
 ];
 

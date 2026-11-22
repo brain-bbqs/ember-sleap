@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.4
+
+#### 🚀 Enhancement
+
+- Top-down models now predict with both their centroid and centered-instance halves, and the model list says where each model comes from, listing each once ([#7](https://github.com/brain-bbqs/ember-sleap/pull/7))
+
 ## 0.1.3
 
 #### 🚀 Enhancement

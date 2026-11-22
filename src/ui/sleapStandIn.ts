@@ -289,7 +289,7 @@ export function mountStandIn(el: HTMLElement, options: MountOptions): SleapAppHa
 
   function renderModel(card: ModelCard): HTMLLIElement {
     const item = h("li");
-    const facts = [card.heads.join(", "), card.species, card.license].filter(Boolean).join(" · ");
+    const facts = [card.heads.join(", "), card.species, card.license, card.sourceLabel].filter(Boolean).join(" · ");
     const predict = button(null, "Predict");
     predict.dataset.role = "predict";
     // The project open now, by its current link: another may have opened, or the link renewed, since.

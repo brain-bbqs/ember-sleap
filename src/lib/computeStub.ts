@@ -1,7 +1,7 @@
 import { entitiesFromPath, modelFolderPath, predictionsPath } from "./bidsDerivatives";
-import { isModelHead, type ModelSource } from "./modelCatalogue";
-import { emberModelId } from "./modelEmber";
-import type { JobEvent, ModelCard, TrackJobSpec, TrainJobSpec } from "./sleapContract";
+import { filesByFolder, isModelHead, type HostModelCard, type ModelSource } from "./modelCatalogue";
+import { emberModelId, emberModelLocation } from "./modelEmber";
+import type { JobEvent, ModelFile, TrackJobSpec, TrainJobSpec } from "./sleapContract";
 import {
   INLINE_LABELS_REFUSED,
   isTerminalEvent,
@@ -26,7 +26,7 @@ export interface StubCompute extends ComputeClient {
 
 type ScriptedEvent = Pick<JobEvent, "topic" | "data"> & {
   /** A trained model's card, listed from the moment its job.result is reported. */
-  trained?: ModelCard;
+  trained?: HostModelCard;
 };
 
 interface StubJob {
@@ -109,21 +109,40 @@ function trainResult(request: JobRequest, labelsPath: string, modelId: string): 
 
 /**
  * The card the EMBER model source would give the trained model's folder once the proxy has written
- * it, so a follow-up track job can name `model_dir` here too. The stub writes nothing, so the files
- * are references a worker would resolve, never fetched in the page.
+ * it, so a follow-up track job can name `model_dir` here too: one model folder, or a subfolder per
+ * head when the job trained several, as top-down's centroid and centered_instance. The stub writes
+ * nothing, so the files are references a worker would resolve, never fetched in the page.
  */
-function trainedCard(request: JobRequest, spec: TrainJobSpec, modelId: string): ModelCard | undefined {
+function trainedCard(request: JobRequest, spec: TrainJobSpec, modelId: string): HostModelCard | undefined {
   if (!request.project) return undefined;
-  const folder = `ember://${request.project.dandisetId}/${modelFolderPath(modelId)}`;
+  const { dandisetId } = request.project;
+  const heads = spec.model_types.filter(isModelHead);
+  const files = (heads.length > 1 ? heads : [""]).flatMap((folder): ModelFile[] => {
+    const base = `ember://${dandisetId}/${modelFolderPath(modelId)}${folder ? `${folder}/` : ""}`;
+    return [
+      { role: "config", folder, url: `${base}training_config.yaml` },
+      { role: "checkpoint", folder, url: `${base}best.ckpt` },
+    ];
+  });
   return {
-    id: emberModelId(request.project.dandisetId, modelId),
+    id: emberModelId(dandisetId, modelId),
     name: `${modelId} (trained here on the stub)`,
-    heads: spec.model_types.filter(isModelHead),
-    files: [
-      { role: "config", url: `${folder}training_config.yaml` },
-      { role: "checkpoint", url: `${folder}best.ckpt` },
-    ],
+    heads,
+    files,
+    source: emberModelLocation(dandisetId, modelId),
   };
+}
+
+/** A line per model, and an indented one per model folder a worker would download, naming its files. */
+function modelLogs(request: JobRequest, spec: TrackJobSpec): ScriptedEvent[] {
+  return spec.model_paths.flatMap((id) => {
+    const files = request.models.find((model) => model.id === id)?.files ?? [];
+    const folders = [...filesByFolder(files)].map(([folder, held]) => {
+      const named = held.map((file) => `${file.role} ${file.url}`).join("; ");
+      return log(`  model folder ${folder || "(top level)"}: ${named}`);
+    });
+    return [log(`Model: ${id}`), ...folders];
+  });
 }
 
 function trackScript(request: JobRequest, spec: TrackJobSpec): ScriptedEvent[] {
@@ -146,7 +165,7 @@ function trackScript(request: JobRequest, spec: TrackJobSpec): ScriptedEvent[] {
     status("queued"),
     status("running"),
     ...inputLogs(request),
-    ...spec.model_paths.map((id) => log(`Model: ${id}`)),
+    ...modelLogs(request, spec),
     { topic: "job.result", data: { predictions } },
     status("completed"),
   ];
@@ -163,7 +182,7 @@ export function createStubCompute({
   clearTimer = (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
 }: StubComputeOptions = {}): StubCompute {
   const jobs = new Map<string, StubJob>();
-  const trained: ModelCard[] = [];
+  const trained: HostModelCard[] = [];
   let jobCount = 0;
 
   // A subscriber's bug must not stall the job, as with the proxy client: the others still hear it.

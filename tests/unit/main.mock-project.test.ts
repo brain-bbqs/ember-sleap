@@ -49,9 +49,10 @@ describe("?test&mock_project", () => {
     );
   });
 
-  it("lists the fixed models", async () => {
+  it("lists the fixed models, a top-down one among them", async () => {
     role("list-models").click();
     await vi.waitFor(() => expect(document.querySelectorAll('[data-role="predict"]').length).toBe(MOCK_MODELS.length));
+    expect(role("models").textContent).toContain("Test injection model (top-down) centroid, centered_instance");
   });
 
   it("runs a training job on the stub, on what the save wrote, and streams it into the job view", async () => {
@@ -92,6 +93,20 @@ describe("?test&mock_project", () => {
     await vi.waitFor(() => expect(role("job-state").textContent).toBe("completed"), { timeout: 5000 });
     expect(role("job-log").textContent).toMatch(new RegExp(`Input: ${name.source} \\(pkg\\.slp\\)`));
     expect(role("dirty").hidden).toBe(false);
+  });
+
+  it("predicts with the top-down model, fetching both of its model folders", async () => {
+    role("list-models").click();
+    const predicts = () => document.querySelectorAll<HTMLButtonElement>('[data-role="predict"]');
+    // Beside the models trained by the two training jobs so far.
+    await vi.waitFor(() => expect(predicts().length).toBe(MOCK_MODELS.length + 2));
+    expect(role("models").textContent).toContain("from EMBER dandiset mock");
+    predicts()[1].click();
+    await vi.waitFor(() => expect(role("job-id").textContent).toBe("Job stub-4"));
+    await vi.waitFor(() => expect(role("job-state").textContent).toBe("completed"), { timeout: 5000 });
+    const log = role("job-log").textContent;
+    expect(log).toContain("Model: mock:top-down\n  model folder centroid: config data:,mock-centroid-config;");
+    expect(log).toContain("  model folder centered_instance: config data:,mock-centered-instance-config;");
   });
 
   it("says sign-in is not available yet where the person is looking", () => {

@@ -1,9 +1,19 @@
 import { isSafeRelativePath } from "./fileType";
-import { isModelHead, parseSkeleton, type ModelSource } from "./modelCatalogue";
-import type { ModelCard, ModelFile, ModelSkeleton } from "./sleapContract";
+import {
+  folderOf,
+  isModelHead,
+  modelFileRole,
+  modelFilesProblem,
+  parseSkeleton,
+  type HostModelCard,
+  type ModelLocation,
+  type ModelSource,
+} from "./modelCatalogue";
+import type { ModelFile, ModelHead, ModelSkeleton } from "./sleapContract";
 
 // The central model index: a curated `models.json` in a designated EMBER dandiset, each entry
-// pointing at a model folder on Hugging Face or EMBER. Format: docs/MODEL_INDEX.md.
+// pointing at a model on Hugging Face or EMBER. Format: docs/MODEL_INDEX.md; a valid example is
+// docs/examples/models.json, and `npm run check-model-index` checks a file before it is published.
 
 export const MODEL_INDEX_SCHEMA = "ember-sleap.models/v1";
 
@@ -20,18 +30,9 @@ const HF_REPO = /^[\w.-]+\/[\w.-]+$/;
 const SHA256 = /^[0-9a-f]{64}$/;
 
 export interface ParsedModelIndex {
-  models: ModelCard[];
+  models: HostModelCard[];
   /** One line per entry left out, naming the entry and what was wrong with it. */
   problems: string[];
-}
-
-type EntrySource =
-  { kind: "huggingface"; repo: string; revision: string } | { kind: "ember"; dandiset: string; path: string };
-
-interface EntryFile {
-  role: ModelFile["role"];
-  path: string;
-  sha256?: string;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -46,7 +47,15 @@ function encodePath(path: string): string {
   return path.split("/").map(encodeURIComponent).join("/");
 }
 
-function parseSource(value: unknown): EntrySource | string {
+/**
+ * A relative path that stays inside where it is read from: no empty, `.` or `..` segments, and no
+ * `%` or backslash, which a URL parser or a worker's file system could turn into either.
+ */
+function isModelPath(path: string): boolean {
+  return isSafeRelativePath(path) && !/[%\\]/.test(path);
+}
+
+function parseSource(value: unknown): ModelLocation | string {
   if (!isRecord(value)) return "source must be an object";
   const keys = Object.keys(value);
   if (keys.length !== 1) return 'source must name exactly one of "huggingface" or "ember"';
@@ -61,38 +70,55 @@ function parseSource(value: unknown): EntrySource | string {
     if (!nonEmpty(ember.dandiset) || !DANDISET_ID.test(ember.dandiset))
       return "source.ember.dandiset must be a six-digit id";
     const folder = nonEmpty(ember.path) ? ember.path.replace(/\/+$/, "") : "";
-    if (!folder || !isSafeRelativePath(folder)) return "source.ember.path must be a relative folder path";
-    return { kind: "ember", dandiset: ember.dandiset, path: folder };
+    if (!folder || !isModelPath(folder)) return "source.ember.path must be a relative folder path";
+    return { kind: "ember", dandisetId: ember.dandiset, path: folder };
   }
   return 'source must name exactly one of "huggingface" or "ember"';
 }
 
-function parseFiles(value: unknown): EntryFile[] | string {
-  if (!Array.isArray(value) || value.length === 0) return "files must be a non-empty array";
-  const files: EntryFile[] = [];
-  for (const file of value) {
-    if (!isRecord(file)) return "every file must be an object";
-    if (file.role !== "config" && file.role !== "checkpoint") return 'file role must be "config" or "checkpoint"';
-    if (!nonEmpty(file.path) || !isSafeRelativePath(file.path)) return "file path must be a relative path";
-    if (file.sha256 !== undefined && (typeof file.sha256 !== "string" || !SHA256.test(file.sha256))) {
-      return "file sha256 must be 64 lowercase hex digits";
-    }
-    files.push({ role: file.role, path: file.path, ...(file.sha256 ? { sha256: file.sha256 } : {}) });
-  }
-  if (!files.some((file) => file.role === "config")) return "files must include a config";
-  return files;
-}
-
-function fileUrl(source: EntrySource, path: string): string {
+function fileUrl(source: ModelLocation, path: string): string {
   if (source.kind === "huggingface") {
     return `${HF_HUB_URL}/${source.repo}/resolve/${encodeURIComponent(source.revision)}/${encodePath(path)}`;
   }
   // EMBER has no URL per asset path without an API lookup, so the card keeps a reference the
   // compute side resolves against the archive (see docs/MODEL_INDEX.md).
-  return `ember://${source.dandiset}/${source.path}/${path}`;
+  return `ember://${source.dandisetId}/${encodePath(source.path)}/${encodePath(path)}`;
 }
 
-function parseEntry(entry: Record<string, unknown>): ModelCard | string {
+/**
+ * One of an entry's files at the source, in the model folder its path's directory names, or why
+ * not. `paths` holds the paths of the entry's files read so far.
+ */
+function parseFile(file: unknown, source: ModelLocation, paths: Set<string>): ModelFile | string {
+  if (!isRecord(file)) return "every file must be an object";
+  const { role, path, sha256 } = file;
+  if (role !== "config" && role !== "checkpoint") return 'file role must be "config" or "checkpoint"';
+  if (!nonEmpty(path) || !isModelPath(path)) return "file path must be a relative path";
+  if (paths.has(path)) return `file "${path}" is listed twice`;
+  paths.add(path);
+  // The compute side saves each file under its role's name, so a known name must match its role.
+  const named = modelFileRole(path.slice(path.lastIndexOf("/") + 1));
+  if (named && named !== role) return `file "${path}" is named as a ${named}, not a ${role}`;
+  if (sha256 !== undefined && (typeof sha256 !== "string" || !SHA256.test(sha256))) {
+    return "file sha256 must be 64 lowercase hex digits";
+  }
+  return { role, folder: folderOf(path), url: fileUrl(source, path), ...(sha256 ? { sha256 } : {}) };
+}
+
+/** The entry's files at the source, or why they cannot run as the entry's heads say. */
+function parseFiles(value: unknown, source: ModelLocation, heads: readonly ModelHead[]): ModelFile[] | string {
+  if (!Array.isArray(value) || value.length === 0) return "files must be a non-empty array";
+  const files: ModelFile[] = [];
+  const paths = new Set<string>();
+  for (const entry of value) {
+    const file = parseFile(entry, source, paths);
+    if (typeof file === "string") return file;
+    files.push(file);
+  }
+  return modelFilesProblem(heads, files) ?? files;
+}
+
+function parseEntry(entry: Record<string, unknown>): HostModelCard | string {
   const { id, name, version, license, species, heads, skeleton } = entry;
   if (!nonEmpty(name)) return "name must be a non-empty string";
   if (!nonEmpty(version)) return "version must be a non-empty string";
@@ -108,7 +134,7 @@ function parseEntry(entry: Record<string, unknown>): ModelCard | string {
   }
   const source = parseSource(entry.source);
   if (typeof source === "string") return source;
-  const files = parseFiles(entry.files);
+  const files = parseFiles(entry.files, source, heads);
   if (typeof files === "string") return files;
 
   return {
@@ -119,11 +145,8 @@ function parseEntry(entry: Record<string, unknown>): ModelCard | string {
     ...(species !== undefined ? { species } : {}),
     heads: [...heads],
     ...(parsedSkeleton ? { skeleton: parsedSkeleton } : {}),
-    files: files.map((file) => ({
-      role: file.role,
-      url: fileUrl(source, file.path),
-      ...(file.sha256 ? { sha256: file.sha256 } : {}),
-    })),
+    files,
+    source: { kind: "index", target: source },
   };
 }
 
@@ -135,7 +158,7 @@ export function parseModelIndex(json: unknown): ParsedModelIndex {
   if (!isRecord(json) || json.schema !== MODEL_INDEX_SCHEMA || !Array.isArray(json.models)) {
     throw new Error(`Not a model index: expected { "schema": "${MODEL_INDEX_SCHEMA}", "models": [...] }.`);
   }
-  const models: ModelCard[] = [];
+  const models: HostModelCard[] = [];
   const problems: string[] = [];
   const seen = new Set<string>();
   json.models.forEach((entry: unknown, i) => {
@@ -144,19 +167,31 @@ export function parseModelIndex(json: unknown): ParsedModelIndex {
       problems.push(`Entry ${label}: id must be a non-empty string.`);
       return;
     }
+    // Claimed on first sight, so a later entry with the id is left out even when this one is.
     if (seen.has(entry.id)) {
       problems.push(`Entry ${label}: duplicate id.`);
       return;
     }
-    const card = parseEntry(entry);
-    if (typeof card === "string") {
-      problems.push(`Entry ${label}: ${card}.`);
-      return;
-    }
     seen.add(entry.id);
-    models.push(card);
+    const card = parseEntry(entry);
+    if (typeof card === "string") problems.push(`Entry ${label}: ${card}.`);
+    else models.push(card);
   });
   return { models, problems };
+}
+
+/**
+ * An index file's text checked as the page would read it, for `npm run check-model-index`: text
+ * that is not JSON, or JSON that is not a v1 index, is one problem, and every entry left out is one.
+ * A leading byte order mark is dropped, as the page's `response.json()` drops it.
+ */
+export function checkModelIndex(text: string): ParsedModelIndex {
+  try {
+    return parseModelIndex(JSON.parse(text.replace(/^\uFEFF/, "")));
+  } catch (e) {
+    const why = e instanceof SyntaxError ? `Not JSON: ${e.message}` : (e as Error).message;
+    return { models: [], problems: [why] };
+  }
 }
 
 export interface IndexSourceOptions {

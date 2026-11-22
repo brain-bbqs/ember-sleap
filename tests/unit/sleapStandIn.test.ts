@@ -678,6 +678,17 @@ describe("mountStandIn", () => {
       expect(host.submitJob).toHaveBeenCalledTimes(1);
     });
 
+    it("says where each listed model comes from, in the host's words", async () => {
+      const sourceLabel = "from the model index (Hugging Face lab/mouse)";
+      const listModels = () =>
+        Promise.resolve([{ id: "index:mouse", name: "Mouse (1)", heads: [], license: "MIT", files: [], sourceLabel }]);
+      const app = mount({ host: { listModels } });
+      await app.open(FILE);
+      q(container, "list-models").click();
+      await vi.waitFor(() => expect(container.querySelectorAll('[data-role="predict"]').length).toBe(1));
+      expect(q(container, "models").textContent).toContain("MIT · from the model index (Hugging Face lab/mouse)");
+    });
+
     it("predicts on the project open when Predict is pressed, not the one the list was made for", async () => {
       const { host } = computeHost();
       const app = mount({ host });

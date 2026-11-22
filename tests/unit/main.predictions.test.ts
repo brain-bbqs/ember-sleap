@@ -28,6 +28,7 @@ const DISCARD = "The open project has unsaved changes. Open the predictions with
 const assets = [
   { asset_id: "a1", path: "sub-01/ses-02/beh/cam-top.slp", size: 12 },
   { asset_id: "c1", path: "derivatives/sleap/models/mouse/training_config.yaml", size: 1 },
+  { asset_id: "k1", path: "derivatives/sleap/models/mouse/best.ckpt", size: 1 },
 ];
 const write = (asset_id: string, path: string) => assets.push({ asset_id, path, size: 12 });
 // Requests the test holds back by name (`download:<asset>`, `read:<asset>`, `submit`, `events`),

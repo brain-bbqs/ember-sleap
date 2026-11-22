@@ -1,4 +1,4 @@
-import type { FileType, JobEvent, JobSpec, JobState } from "./sleapContract";
+import type { FileType, JobEvent, JobSpec, JobState, ModelFile } from "./sleapContract";
 
 /**
  * The central Pennsieve proxy's job API root. Null until the proxy team's API exists (see
@@ -32,8 +32,11 @@ export interface JobRequest {
   spec: JobSpec;
   /** Every URL the spec names (`labels_path`, `data_path`, ...), with its file type and EMBER asset. */
   inputs: JobInput[];
-  /** The model card ids in a track job's `model_paths`, expanded to the files the worker fetches. */
-  models: { id: string; files: { role: "config" | "checkpoint"; url: string; sha256?: string }[] }[];
+  /**
+   * The model card ids in a track job's `model_paths`, expanded to the files the worker fetches,
+   * each naming the model folder it goes in.
+   */
+  models: { id: string; files: ModelFile[] }[];
   /** The EMBER dandiset results go back to, and the project they came from. */
   project?: { dandisetId: string; path: string };
 }

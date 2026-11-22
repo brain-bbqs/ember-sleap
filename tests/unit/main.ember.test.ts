@@ -39,6 +39,7 @@ beforeAll(async () => {
       respond: jsonResponse({
         results: [
           { asset_id: "c1", path: "derivatives/sleap/models/mouse/training_config.yaml" },
+          { asset_id: "k1", path: "derivatives/sleap/models/mouse/best.ckpt" },
           { asset_id: "m1", path: "derivatives/sleap/models/mouse/model_card.json" },
         ],
       }),

@@ -29,6 +29,13 @@ export interface ModelSkeleton {
 
 export interface ModelFile {
   role: "config" | "checkpoint";
+  /**
+   * The model folder the file belongs to, as a path below where the host keeps the model: "" for
+   * one kept at the top, or e.g. "centroid" and "centered_instance" for the two folders of a
+   * top-down model. sleap-nn loads a model from a folder holding one head's config and checkpoint,
+   * so every folder a card names has exactly one of each, and only a top-down card names two.
+   */
+  folder: string;
   url: string;
   sha256?: string;
 }
@@ -41,6 +48,8 @@ export interface ModelCard {
   heads: ModelHead[];
   skeleton?: ModelSkeleton;
   files: ModelFile[];
+  /** Where the host found the model, in its own words, which the picker shows as they are. */
+  sourceLabel?: string;
 }
 
 export interface ModelQuery {

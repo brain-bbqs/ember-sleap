@@ -29,7 +29,7 @@ Swapping in the real package is a change to one function, `loadSleapComponent` i
 | Open a `.slp` or `.pkg.slp` from any readable dandiset | Works against the live archive                                                                                            |
 | Save to `derivatives/sleap/` as a BIDS derivative      | Works end to end against a mocked archive; needs sign-in                                                                  |
 | EMBER sign-in                                          | Wired, but off until EMBER registers an OAuth app for this page                                                           |
-| Model catalogue (Hugging Face, EMBER, central index)   | Sources written and unit-tested; the index dandiset does not exist yet                                                    |
+| Model catalogue (Hugging Face, EMBER, central index)   | Sources written and unit-tested, top-down models included; the index dandiset does not exist yet                          |
 | Training and inference                                 | Run on an in-browser stub until the central Pennsieve proxy's job API exists ([docs/COMPUTE_API.md](docs/COMPUTE_API.md)) |
 
 Try it with [`?dandiset=000398`](https://sleap.brain-bbqs.org/?dandiset=000398) (a public SLEAP example) or offline with [`?test&mock_project`](https://sleap.brain-bbqs.org/?test&mock_project).
@@ -42,6 +42,7 @@ npm run dev              # the app, with hot reload
 npm test                 # unit tests (add `:coverage`, or `:watch`)
 npm run test:integration # Playwright, against a fresh build
 npm run lint && npm run typecheck
+npm run check-model-index -- docs/examples/models.json
 ```
 
 Set `PLAYWRIGHT_CHROMIUM_PATH` to reuse a browser already on the machine instead of `npx playwright install`.

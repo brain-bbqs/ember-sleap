@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { fromHostRef } from "../../src/lib/hostRef";
+import { filesByFolder, modelFilesProblem } from "../../src/lib/modelCatalogue";
 import {
   MOCK_DANDISET_ID,
   MOCK_MODELS,
@@ -79,5 +80,13 @@ describe("mockModelSource", () => {
     expect(listed).toEqual([...MOCK_MODELS]);
     expect(listed).not.toBe(MOCK_MODELS);
     expect(listed.every((card) => card.name.startsWith("Test injection"))).toBe(true);
+  });
+
+  it("holds a single-folder model and a top-down one with a folder per head, each as a source must list it", () => {
+    expect(MOCK_MODELS.map((card) => [card.id, [...filesByFolder(card.files).keys()]])).toEqual([
+      ["mock:single-instance", [""]],
+      ["mock:top-down", ["centroid", "centered_instance"]],
+    ]);
+    expect(MOCK_MODELS.map((card) => modelFilesProblem(card.heads, card.files))).toEqual([null, null]);
   });
 });

@@ -1,6 +1,6 @@
 {
   "name": "ember-sleap",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "Label, train and predict with SLEAP on data in the EMBER archive: the SLEAP web app embedded in a BBQS page that opens and saves on EMBER.",
   "type": "module",
   "license": "MIT",
@@ -18,7 +18,8 @@
     "format": "prettier --config configs/prettier.config.js --write .",
     "format:check": "prettier --config configs/prettier.config.js --check .",
     "storybook": "storybook dev -p 6006 --config-dir configs/storybook",
-    "build-storybook": "storybook build --config-dir configs/storybook"
+    "build-storybook": "storybook build --config-dir configs/storybook",
+    "check-model-index": "node scripts/check-model-index.mjs"
   },
   "devDependencies": {
     "@brain-bbqs/config": "^0.2.0",

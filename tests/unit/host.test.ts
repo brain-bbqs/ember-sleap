@@ -16,7 +16,7 @@ import {
   type JobContext,
 } from "../../src/lib/host";
 import { toHostRef } from "../../src/lib/hostRef";
-import type { ModelSource } from "../../src/lib/modelCatalogue";
+import type { HostModelCard, ModelSource } from "../../src/lib/modelCatalogue";
 import type {
   HostRef,
   JobEvent,
@@ -45,7 +45,19 @@ const CARD: ModelCard = {
   id: "hf:lab/mice",
   name: "lab/mice",
   heads: ["single_instance"],
-  files: [{ role: "config", url: "https://hf.test/lab/mice/training_config.yaml" }],
+  files: [
+    { role: "config", folder: "", url: "https://hf.test/lab/mice/training_config.yaml" },
+    { role: "checkpoint", folder: "", url: "https://hf.test/lab/mice/best.ckpt" },
+  ],
+};
+const TOP_DOWN: ModelCard = {
+  id: "hf:lab/mice-topdown",
+  name: "lab/mice-topdown",
+  heads: ["centroid", "centered_instance"],
+  files: ["centroid", "centered_instance"].flatMap((folder) => [
+    { role: "config" as const, folder, url: `https://hf.test/lab/mice-topdown/${folder}/training_config.yaml` },
+    { role: "checkpoint" as const, folder, url: `https://hf.test/lab/mice-topdown/${folder}/best.ckpt` },
+  ]),
 };
 const project = toHostRef({ dandisetId: "000398", path: "sub-01/train.pkg.slp" });
 const savedRef = toHostRef({ dandisetId: "000398", path: SAVED_PATH });
@@ -160,6 +172,22 @@ describe("buildJobRequest", () => {
     });
   });
 
+  it("sends every model folder of a top-down model, each file naming its folder", () => {
+    const cards = new Map([TOP_DOWN, CARD].map((card) => [card.id, card]));
+    const request = buildJobRequest(
+      track({ model_paths: [TOP_DOWN.id, CARD.id] }),
+      undefined,
+      known({ files: filesOf(VIDEO), cards }),
+    );
+    expect(request.models.map((m) => [m.id, m.files.map((f) => `${f.folder}:${f.role}`)])).toEqual([
+      [
+        TOP_DOWN.id,
+        ["centroid:config", "centroid:checkpoint", "centered_instance:config", "centered_instance:checkpoint"],
+      ],
+      [CARD.id, [":config", ":checkpoint"]],
+    ]);
+  });
+
   it("refuses a URL this page did not hand out, since its type is unknown", () => {
     expect(() => buildJobRequest(train({ labels_path: "https://elsewhere.test/x" }), project, known())).toThrow(
       "This page did not open https://elsewhere.test/x",
@@ -173,7 +201,7 @@ describe("buildJobRequest", () => {
   });
 });
 
-function setup(cards: ModelCard[] = [CARD], extra: Partial<HostDeps> = {}) {
+function setup(cards: HostModelCard[] = [CARD], extra: Partial<HostDeps> = {}) {
   const archives = new Map<string, ArchiveRef>([
     [LABELS.url, archiveOf("a1", "sub-01/train.pkg.slp")],
     [SAVED.url, archiveOf("s1", SAVED_PATH)],
@@ -458,6 +486,24 @@ describe("createSleapHost", () => {
     await expect(unknown).rejects.toThrow("Model ember:000398/never is not in the catalogue this page listed.");
     expect(onModelWarning).toHaveBeenCalledTimes(2);
     expect(compute.submit).toHaveBeenCalledTimes(2);
+  });
+
+  it("still sends a model an index entry replaced in the list, named by its own id as a train result names it", async () => {
+    const location = { kind: "ember", dandisetId: "000398", path: "derivatives/sleap/models/m" } as const;
+    const trained: HostModelCard = { ...CARD, id: "ember:000398/m", source: location };
+    const curated: HostModelCard = {
+      ...CARD,
+      id: "index:m",
+      files: CARD.files.map((file) => ({ ...file, sha256: "a".repeat(64) })),
+      source: { kind: "index", target: location },
+    };
+    const { host, compute } = setup([trained, curated]);
+    host.remember({ ...VIDEO, ref: project });
+    await host.submitJob(track({ model_paths: [trained.id] }), project);
+    expect(compute.submit).toHaveBeenCalledWith(
+      expect.objectContaining({ models: [{ id: trained.id, files: trained.files }] }),
+    );
+    expect((await host.listModels({})).map((card) => card.id)).toEqual(["index:m"]);
   });
 
   it("remembers nothing when no video is found", async () => {
