@@ -29,6 +29,12 @@ export function getElements() {
     projectLocation: required<HTMLParagraphElement>("project-location"),
     sleapRoot: required<HTMLDivElement>("sleap-root"),
     hostStatus: required<HTMLParagraphElement>("host-status"),
+    predictions: {
+      section: required<HTMLDivElement>("predictions"),
+      list: required<HTMLUListElement>("predictions-list"),
+      status: required<HTMLParagraphElement>("predictions-status"),
+      retry: required<HTMLButtonElement>("predictions-retry"),
+    },
     entities: {
       dialog: required<HTMLDialogElement>("entities-dialog"),
       form: required<HTMLFormElement>("entities-form"),

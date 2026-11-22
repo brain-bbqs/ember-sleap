@@ -1,3 +1,4 @@
+import { isSafeRelativePath } from "./fileType";
 import { isModelHead, parseSkeleton, type ModelSource } from "./modelCatalogue";
 import type { ModelCard, ModelFile, ModelSkeleton } from "./sleapContract";
 
@@ -39,11 +40,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function nonEmpty(value: unknown): value is string {
   return typeof value === "string" && value.trim() !== "";
-}
-
-/** A relative path with no empty, `.` or `..` segment, so it cannot climb out of its model folder. */
-function isSafeRelativePath(path: string): boolean {
-  return path.split("/").every((segment) => segment !== "" && segment !== "." && segment !== "..");
 }
 
 function encodePath(path: string): string {

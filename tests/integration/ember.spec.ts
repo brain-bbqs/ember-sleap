@@ -211,6 +211,56 @@ test.describe("EMBER storage", () => {
     expect(archive.created.map((c) => c.path)).not.toContain(predictions);
   });
 
+  test("opens the predictions a finished inference job wrote, once they are on EMBER, and saves them as labels", async ({
+    page,
+  }) => {
+    // Hugging Face lists nothing, so the dandiset's own model folder is the one to predict with.
+    await page.route("https://huggingface.co/**", (route) =>
+      route.fulfill({ status: 200, headers: CORS, contentType: "application/json", body: "[]" }),
+    );
+    // A package's own labels stay a package, so the predictions' labels (a plain .slp) are told
+    // apart from what a save of the source would write.
+    const archive = await routeArchive(page, [
+      { asset_id: "a1", path: "sub-01/ses-02/beh/cam-top.pkg.slp", size: 64 },
+      { asset_id: "m1", path: "derivatives/sleap/models/mouse/training_config.yaml", size: 1 },
+    ]);
+    const downloads: string[] = [];
+    page.on("request", (request) => {
+      const asset = /\/assets\/([^/]+)\/download\/$/.exec(request.url());
+      if (asset) downloads.push(asset[1]);
+    });
+    const folder = "derivatives/sleap/sub-01/ses-02/beh";
+    const predictions = `${folder}/sub-01_ses-02_desc-predictionsCamTop_pose.slp`;
+    await openProject(page, "sub-01/ses-02/beh/cam-top.pkg.slp");
+    await role(page, "list-models").click();
+    await role(page, "predict").first().click();
+    await expect(role(page, "job-state")).toHaveText("completed", { timeout: 15_000 });
+    await expect(page.locator("#predictions-list button")).toHaveText([predictions]);
+
+    // The stub writes nothing, so the archive has no such file until the test puts it there.
+    await page.locator(`.predictions-open[data-path="${predictions}"]`).click();
+    await expect(page.locator("#predictions-status")).toHaveText(
+      `${predictions} is not on EMBER yet: the job may still be writing it. Try again in a moment.`,
+    );
+    await expect(page.locator("#project-title")).toHaveText("cam-top.pkg.slp");
+
+    archive.assets.push({ asset_id: "p1", path: predictions, size: 64 });
+    await page.locator("#predictions-retry").click();
+    await expect(page.locator("#project-location")).toHaveText(`Dandiset 000123 · ${predictions}`);
+    await expect(role(page, "file-type")).toHaveText("slp");
+    await expect(role(page, "file-probe")).toHaveText("Read the first 12 bytes with a ranged request: HDF5 signature.");
+    await expect(page.locator("#predictions-retry")).toBeHidden();
+    expect(downloads).toContain("p1");
+
+    await role(page, "edit").click();
+    await role(page, "save").click();
+    const labels = `${folder}/sub-01_ses-02_desc-labelsCamTop_pose.slp`;
+    await expect(page.locator("#host-status")).toHaveText(`Saved to the draft of dandiset 000123: ${labels}`);
+    expect(archive.created[0]).toMatchObject({ method: "POST", path: labels });
+    expect(archive.created.map((c) => c.path)).not.toContain(predictions);
+    expect(archive.created.map((c) => c.path)).not.toContain(`${folder}/sub-01_ses-02_desc-labelsCamTop_pose.pkg.slp`);
+  });
+
   for (const [choice, button, landed] of [
     ["cancel", "#overwrite-cancel", null],
     ["keep both", "#overwrite-keep", ["POST", "sub-01_ses-02_desc-labels2_pose.slp"]],

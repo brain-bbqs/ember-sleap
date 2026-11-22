@@ -71,6 +71,33 @@ test.describe("the embedded SLEAP app", () => {
     await expect(role(page, "job-log")).toContainText("Model: ember:mock/stub-model-1");
   });
 
+  test("opens the predictions an inference job wrote, and saves them proofread as labels beside them", async ({
+    page,
+  }) => {
+    const folder = "derivatives/sleap/sub-mock/beh";
+    const predictions = `${folder}/sub-mock_desc-predictionsTestInjectionMockProject_pose.slp`;
+    await openMockProject(page);
+    await expect(page.locator("#predictions")).toBeHidden();
+    await role(page, "list-models").click();
+    await role(page, "predict").first().click();
+    await expect(role(page, "job-state")).toHaveText("completed");
+    await expect(page.locator("#predictions-list button")).toHaveText([predictions]);
+
+    await page.locator(`.predictions-open[data-path="${predictions}"]`).click();
+    await expect(role(page, "file-name")).toHaveText("sub-mock_desc-predictionsTestInjectionMockProject_pose.slp");
+    await expect(page.locator("#project-location")).toHaveText(`Test injection · ${predictions}`);
+    await expect(role(page, "file-probe")).toContainText("HDF5 signature");
+
+    await role(page, "edit").click();
+    await page.keyboard.press("Control+s");
+    await expect(page.locator("#host-status")).toHaveText(
+      `Saved in memory (test injection): ${folder}/sub-mock_desc-labelsTestInjectionMockProject_pose.slp`,
+    );
+    await expect(role(page, "dirty")).toBeHidden();
+    // The predictions stay listed, to open again.
+    await expect(page.locator("#predictions-list button")).toHaveText([predictions]);
+  });
+
   test("trains on unsaved edits offline, keeping them in memory as a training package first", async ({ page }) => {
     const hosts = new Set<string>();
     page.on("request", (request) => {

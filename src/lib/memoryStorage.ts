@@ -5,12 +5,13 @@ import {
   suggestedEntities,
   trainingPackagePath,
 } from "./bidsDerivatives";
-import type { SavedFile, ProjectStorage } from "./emberStorage";
-import { baseName, fileTypeOfPath } from "./fileType";
+import { notOnEmberYet, type PathOpener, type SavedFile, type ProjectStorage } from "./emberStorage";
+import { baseName, fileTypeOfPath, projectTypeOf } from "./fileType";
 import { fromHostRef, toHostRef, type EmberLocation } from "./hostRef";
-import type { HostRef } from "./sleapContract";
+import type { HostRef, OpenRequest } from "./sleapContract";
+import { mockProjectUrl } from "./testInjection";
 
-export interface MemoryStorage extends ProjectStorage {
+export interface MemoryStorage extends ProjectStorage, PathOpener {
   /** What each save wrote, in order, for the page and tests to show and check. */
   readonly saved: { path: string; size: number }[];
 }
@@ -18,6 +19,8 @@ export interface MemoryStorage extends ProjectStorage {
 export interface MemoryStorageOptions {
   /** The time a training package is named after (see packageClock in bidsDerivatives.ts). */
   now?: () => Date;
+  /** Opening by path finds nothing, as EMBER does before a worker has written the file. */
+  unwritten?: boolean;
 }
 
 /**
@@ -25,9 +28,15 @@ export interface MemoryStorageOptions {
  * EMBER storage would place them, but kept in memory, so the save path can be exercised with no
  * archive, sign-in or network. Where EMBER storage would ask for a subject and session, the
  * suggestion the dialog would offer is taken instead, and a source path naming no subject at all
- * goes under `sub-mock`. Nothing here is an archive asset, so no link is described as one.
+ * goes under `sub-mock`. Opening by path, as the predictions the compute stub reports are opened,
+ * serves a synthesized project like the mock one for any project path, since the stub writes
+ * nothing, or with `unwritten`, finds nothing there. Nothing here is an archive asset, so no link
+ * is described as one.
  */
-export function createMemoryStorage({ now = () => new Date() }: MemoryStorageOptions = {}): MemoryStorage {
+export function createMemoryStorage({
+  now = () => new Date(),
+  unwritten = false,
+}: MemoryStorageOptions = {}): MemoryStorage {
   const saved: { path: string; size: number }[] = [];
   const packageTime = packageClock(now);
 
@@ -51,6 +60,13 @@ export function createMemoryStorage({ now = () => new Date() }: MemoryStorageOpt
     save: (file, name, ref) => keep(ref, file, ({ path }) => labelsSavePath(path, name, entitiesOf(path))),
     saveTrainingPackage: (file, ref) =>
       keep(ref, file, ({ path }) => trainingPackagePath(path, entitiesOf(path), packageTime())),
+    openPath: (dandisetId, path) =>
+      // A path naming no project rejects, as it does on EMBER, before anything is looked up.
+      new Promise<OpenRequest>((resolve) => {
+        const fileType = projectTypeOf(path);
+        if (unwritten) throw new Error(notOnEmberYet(path));
+        resolve({ url: mockProjectUrl(), fileType, name: baseName(path), ref: toHostRef({ dandisetId, path }) });
+      }),
     resolveVideo: () => Promise.resolve(null),
     refreshUrl: (file) => Promise.resolve(file),
     describe: () => null,

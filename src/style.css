@@ -49,7 +49,8 @@
   gap: 0.25rem 0.75rem;
 }
 
-.project-open {
+.project-open,
+.predictions-open {
   font: inherit;
   font-family: var(--mono);
   border: none;
@@ -157,6 +158,43 @@
   font-size: 0.8rem;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+/* ------------------------------------------------------------------------------------------ */
+/* The predictions inference wrote, to open and proofread */
+/* ------------------------------------------------------------------------------------------ */
+
+.predictions {
+  margin-top: 1rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border);
+  display: grid;
+  gap: 0.5rem;
+}
+
+.predictions h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.predictions .hint {
+  margin: 0;
+}
+
+.predictions-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.35rem;
+}
+
+.predictions-status {
+  overflow-wrap: anywhere;
+}
+
+#predictions-retry {
+  justify-self: start;
 }
 
 /* ------------------------------------------------------------------------------------------ */

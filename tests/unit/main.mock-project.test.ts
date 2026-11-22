@@ -3,7 +3,7 @@
 // with in-memory saves, fixed models and the compute stub, and nothing reaching the network.
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { SIGN_IN_UNAVAILABLE } from "../../src/lib/oauth";
-import { MOCK_MODELS, MOCK_PROJECT_PATH } from "../../src/lib/testInjection";
+import { MOCK_MODELS, MOCK_PREDICTIONS_PATH, MOCK_PROJECT_PATH } from "../../src/lib/testInjection";
 import { bootMain, el, role } from "./helpers/mainHarness";
 
 beforeAll(async () => {
@@ -31,6 +31,7 @@ describe("?test&mock_project", () => {
     expect(el("project-title").textContent).toBe("test-injection-mock-project.slp");
     expect(el("project-location").textContent).toBe(`Test injection · ${MOCK_PROJECT_PATH}`);
     expect(document.title).toBe("EMBER SLEAP");
+    expect(el("predictions").hidden).toBe(true);
   });
 
   it("offers only the page's compute, not Local or SLEAP Connect", () => {
@@ -69,9 +70,13 @@ describe("?test&mock_project", () => {
     await vi.waitFor(() => expect(role("job-id").textContent).toBe("Job stub-2"));
     await vi.waitFor(() => expect(role("job-state").textContent).toBe("completed"), { timeout: 5000 });
     expect(role("job-log").textContent).toContain("Model: ember:mock/stub-model-1");
-    expect(role("job-log").textContent).toContain(
-      "derivatives/sleap/sub-mock/beh/sub-mock_desc-predictionsTestInjectionMockProject_pose.slp",
-    );
+    expect(role("job-log").textContent).toContain(MOCK_PREDICTIONS_PATH);
+  });
+
+  it("lists the predictions that inference wrote under the app", () => {
+    expect(el("predictions").hidden).toBe(false);
+    const listed = [...el("predictions-list").querySelectorAll("button")];
+    expect(listed.map((b) => b.textContent)).toEqual([MOCK_PREDICTIONS_PATH]);
   });
 
   it("trains on unsaved edits offline, keeping them in memory as a training package first", async () => {
@@ -110,5 +115,7 @@ describe("?test&mock_project", () => {
     expect(el("app-card").hidden).toBe(true);
     expect(el("open-card").hidden).toBe(false);
     expect(el("sleap-root").children.length).toBe(0);
+    expect(el("predictions").hidden).toBe(true);
+    expect(el("predictions-list").children.length).toBe(0);
   });
 });

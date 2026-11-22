@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.3
+
+#### 🚀 Enhancement
+
+- Predictions from a finished inference are listed below the app, ready to open, proofread and save as labels beside them ([#6](https://github.com/brain-bbqs/ember-sleap/pull/6))
+
 ## 0.1.2
 
 #### 🚀 Enhancement

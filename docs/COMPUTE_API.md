@@ -162,6 +162,10 @@ Each event has the same shape sleap-app's job viewer already consumes from SLEAP
 - A track job naming a card the page has not listed makes the page list models once more before it refuses the job, so the proxy must have written the model folder (with its `training_config.yaml`) to the draft before it reports the train result.
   The in-browser stub writes nothing, so it lists the models it trained itself, under the same ids.
 - A track result's `predictions` are paths relative to the dandiset, in the layout under [Inputs, models and results](#inputs-models-and-results).
+  Once the job's `completed` status arrives, the page lists each one under the app, to open and proofread, as a file in the dandiset the job was submitted from (`project.dandisetId` in the request).
+  It reads only `predictions`, at most its first 100 entries, and only its strings of up to 1024 characters naming a `.slp` or `.pkg.slp` under `derivatives/sleap/` with no empty, `.` or `..` segment.
+  Anything else (another dandiset, an absolute path, an object, a result that is not an object) is left out, with one console warning per job naming what was.
+  Each path is looked up in the draft when it is opened, so a file must be on EMBER by the time the job completes; until it is, the page says the file is not on EMBER yet and offers to try again.
 - `completed`, `failed` and `canceled` are terminal: exactly one of them is the last `job.status` of a job, and nothing follows it.
 - `job.epoch`, `job.curve` and `job.metric` are optional; without them the viewer shows status and logs only.
   sleap-nn's training loop already reports per-epoch losses, so forwarding them is cheap.

@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
+import { notOnEmberYet } from "../../src/lib/emberStorage";
 import { toHostRef } from "../../src/lib/hostRef";
 import { createMemoryStorage } from "../../src/lib/memoryStorage";
+import { mockProjectUrl } from "../../src/lib/testInjection";
 
 const mock = (path: string) => toHostRef({ dandisetId: "mock", path });
 
@@ -79,6 +81,47 @@ describe("createMemoryStorage", () => {
     const storage = createMemoryStorage();
     await expect(write(storage)).rejects.toThrow("Only a project opened from EMBER");
     expect(storage.saved).toEqual([]);
+  });
+
+  describe("openPath", () => {
+    const predictions = "derivatives/sleap/sub-mock/beh/sub-mock_desc-predictionsCamTop_pose.slp";
+
+    it("serves a synthesized project, like the mock one, for the predictions the stub reported", async () => {
+      expect(await createMemoryStorage().openPath("mock", predictions)).toEqual({
+        url: mockProjectUrl(),
+        fileType: "slp",
+        name: "sub-mock_desc-predictionsCamTop_pose.slp",
+        ref: mock(predictions),
+      });
+    });
+
+    it("opens a package as a package", async () => {
+      const path = predictions.replace(".slp", ".pkg.slp");
+      expect((await createMemoryStorage().openPath("mock", path)).fileType).toBe("pkg.slp");
+    });
+
+    it("saves proofread predictions as labels beside them, never over them", async () => {
+      const storage = createMemoryStorage();
+      const { ref, name } = await storage.openPath("mock", predictions);
+      const saved = await storage.save(new Blob(["ab"]), name, ref);
+      expect(saved.ref).toEqual(mock("derivatives/sleap/sub-mock/beh/sub-mock_desc-labelsCamTop_pose.slp"));
+      expect(storage.saved.map((s) => s.path)).not.toContain(predictions);
+    });
+
+    it.each([{}, { unwritten: true }])(
+      "refuses a path naming no SLEAP project, as EMBER storage does (%j)",
+      async (options) => {
+        await expect(createMemoryStorage(options).openPath("mock", "sub-mock/video.mp4")).rejects.toThrow(
+          "sub-mock/video.mp4 is not a SLEAP project (.slp or .pkg.slp).",
+        );
+      },
+    );
+
+    it("finds nothing there when told the files are not written yet, as EMBER says before a worker writes them", async () => {
+      await expect(createMemoryStorage({ unwritten: true }).openPath("mock", predictions)).rejects.toThrow(
+        notOnEmberYet(predictions),
+      );
+    });
   });
 
   it("finds no videos, leaves links as they are, and describes none as an archive asset", async () => {

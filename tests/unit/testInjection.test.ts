@@ -3,23 +3,52 @@ import { fromHostRef } from "../../src/lib/hostRef";
 import {
   MOCK_DANDISET_ID,
   MOCK_MODELS,
+  MOCK_PREDICTIONS_PATH,
   MOCK_PROJECT_PATH,
   mockModelSource,
   mockProjectRequest,
+  mockProjectUrl,
   readTestInjection,
 } from "../../src/lib/testInjection";
 
 describe("readTestInjection", () => {
-  it.each(["", "?mock_project", "?foo=1&bar"])("is null without ?test (%j)", (search) => {
-    expect(readTestInjection(search)).toBe(null);
-  });
+  it.each(["", "?mock_project", "?mock_predictions", "?mock_predictions_missing", "?foo=1&bar"])(
+    "is null without ?test (%j)",
+    (search) => {
+      expect(readTestInjection(search)).toBe(null);
+    },
+  );
 
   it("is a no-op plan for a bare ?test", () => {
-    expect(readTestInjection("?test")).toEqual({ mockProject: false });
+    expect(readTestInjection("?test")).toEqual({
+      mockProject: false,
+      mockPredictions: false,
+      mockPredictionsMissing: false,
+    });
   });
 
-  it.each(["?test&mock_project", "?mock_project&test"])("reads the mock_project flag (%s)", (search) => {
-    expect(readTestInjection(search)).toEqual({ mockProject: true });
+  it.each([
+    ["?test&mock_project", { mockProject: true, mockPredictions: false, mockPredictionsMissing: false }],
+    ["?mock_project&test", { mockProject: true, mockPredictions: false, mockPredictionsMissing: false }],
+    [
+      "?test&mock_project&mock_predictions",
+      { mockProject: true, mockPredictions: true, mockPredictionsMissing: false },
+    ],
+    ["?test&mock_predictions", { mockProject: false, mockPredictions: true, mockPredictionsMissing: false }],
+    [
+      "?test&mock_project&mock_predictions&mock_predictions_missing",
+      { mockProject: true, mockPredictions: true, mockPredictionsMissing: true },
+    ],
+  ])("reads the flags in %s", (search, plan) => {
+    expect(readTestInjection(search)).toEqual(plan);
+  });
+});
+
+describe("MOCK_PREDICTIONS_PATH", () => {
+  it("is where inference on the mock project writes, beside its labels file", () => {
+    expect(MOCK_PREDICTIONS_PATH).toBe(
+      "derivatives/sleap/sub-mock/beh/sub-mock_desc-predictionsTestInjectionMockProject_pose.slp",
+    );
   });
 });
 
@@ -40,6 +69,7 @@ describe("mockProjectRequest", () => {
     expect([...bytes.subarray(0, 8)]).toEqual([0x89, 0x48, 0x44, 0x46, 0x0d, 0x0a, 0x1a, 0x0a]);
     expect(bytes.subarray(8).every((b) => b === 0)).toBe(true);
     expect(mockProjectRequest().url).toBe(request.url);
+    expect(mockProjectUrl()).toBe(request.url);
   });
 });
 

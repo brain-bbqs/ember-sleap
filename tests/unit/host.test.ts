@@ -12,6 +12,7 @@ import {
   createSleapHost,
   INLINE_LABELS_EMPTY,
   INLINE_LABELS_NOT_BASE64,
+  type HostDeps,
   type JobContext,
 } from "../../src/lib/host";
 import { toHostRef } from "../../src/lib/hostRef";
@@ -172,7 +173,7 @@ describe("buildJobRequest", () => {
   });
 });
 
-function setup(cards: ModelCard[] = [CARD]) {
+function setup(cards: ModelCard[] = [CARD], extra: Partial<HostDeps> = {}) {
   const archives = new Map<string, ArchiveRef>([
     [LABELS.url, archiveOf("a1", "sub-01/train.pkg.slp")],
     [SAVED.url, archiveOf("s1", SAVED_PATH)],
@@ -190,13 +191,13 @@ function setup(cards: ModelCard[] = [CARD]) {
   const unsubscribe = vi.fn();
   const compute = {
     submit: vi.fn<(request: JobRequest) => Promise<{ jobId: string }>>(() => Promise.resolve({ jobId: "job-1" })),
-    subscribe: vi.fn(() => unsubscribe),
+    subscribe: vi.fn<(jobId: string, onEvent: (event: JobEvent) => void) => () => void>(() => unsubscribe),
     cancel: vi.fn(() => Promise.resolve()),
   } satisfies ComputeClient;
   const failing: ModelSource = { name: "broken", list: () => Promise.reject(new Error("down")) };
   const working: ModelSource = { name: "working", list: () => Promise.resolve(cards) };
   const onModelWarning = vi.fn();
-  const host = createSleapHost({ storage, modelSources: [failing, working], compute, onModelWarning });
+  const host = createSleapHost({ storage, modelSources: [failing, working], compute, onModelWarning, ...extra });
   /** The request compute was last sent. */
   const sent = () => compute.submit.mock.calls.at(-1)![0];
   return { host, storage, compute, unsubscribe, onModelWarning, sent };
@@ -481,5 +482,182 @@ describe("createSleapHost", () => {
     expect(compute.subscribe).toHaveBeenCalledWith("job-1", onEvent);
     await host.cancelJob("job-1");
     expect(compute.cancel).toHaveBeenCalledWith("job-1");
+  });
+});
+
+describe("the predictions a track job wrote", () => {
+  const FOLDER = "derivatives/sleap/sub-01/beh";
+  const WRITTEN = `${FOLDER}/sub-01_desc-predictionsTrain_pose.slp`;
+  const status = (seq: number, state: string): JobEvent => ({ topic: "job.status", seq, data: { state } });
+  const result = (seq: number, predictions: unknown): JobEvent => ({ topic: "job.result", seq, data: { predictions } });
+  /** A track job's events, from submission to its end. */
+  const history = (predictions: unknown = [WRITTEN], end = "completed"): JobEvent[] => [
+    status(1, "queued"),
+    status(2, "running"),
+    result(3, predictions),
+    status(4, end),
+  ];
+
+  /** A host that reports predictions, with a track job submitted from the project. */
+  async function submitted(spec: TrackJobSpec | TrainJobSpec = track(), ref: HostRef | null = project) {
+    const onPredictions = vi.fn<(jobId: string, files: { dandisetId: string; path: string }[]) => void>();
+    const parts = setup([CARD], { onPredictions });
+    parts.host.remember({ ...VIDEO, ref: project });
+    parts.host.remember({ ...LABELS, ref: project });
+    await parts.host.submitJob(spec, ref ?? undefined);
+    /** Subscribes as the app does, and plays `events` to that subscription. */
+    const follow = (events: JobEvent[], onEvent = vi.fn<(event: JobEvent) => void>()) => {
+      parts.host.subscribeJob("job-1", onEvent);
+      const heard = parts.compute.subscribe.mock.calls.at(-1)![1];
+      for (const event of events) heard(event);
+      return onEvent;
+    };
+    return { ...parts, onPredictions, follow };
+  }
+
+  it("reports a completed track job's predictions once it ends, as files in the dandiset it came from", async () => {
+    const { onPredictions, follow } = await submitted();
+    const events = history();
+    const onEvent = follow(events.slice(0, 3));
+    expect(onPredictions).not.toHaveBeenCalled();
+    follow([events[3]], onEvent);
+    expect(onEvent.mock.calls.map(([event]) => event)).toEqual(events);
+    expect(onPredictions.mock.calls).toEqual([["job-1", [{ dandisetId: "000398", path: WRITTEN }]]]);
+  });
+
+  it("reports each job once, however many subscribers hear it or replay its history", async () => {
+    const { onPredictions, follow, compute } = await submitted();
+    follow(history().slice(0, 3));
+    follow(history());
+    follow(history());
+    expect(onPredictions).toHaveBeenCalledTimes(1);
+    // Once it has ended, a subscription is passed through untouched.
+    const late = vi.fn<(event: JobEvent) => void>();
+    follow(history(), late);
+    expect(compute.subscribe).toHaveBeenLastCalledWith("job-1", late);
+    expect(onPredictions).toHaveBeenCalledTimes(1);
+  });
+
+  it("reports a job two live subscriptions both hear end only once", async () => {
+    const { onPredictions, host, compute } = await submitted();
+    host.subscribeJob("job-1", vi.fn());
+    host.subscribeJob("job-1", vi.fn());
+    const [first, second] = compute.subscribe.mock.calls.map(([, heard]) => heard);
+    for (const event of history()) {
+      first(event);
+      second(event);
+    }
+    expect(onPredictions).toHaveBeenCalledTimes(1);
+  });
+
+  it("still reports when the app's own handler throws, and lets the error through", async () => {
+    const { onPredictions, host, compute } = await submitted();
+    const broken = vi.fn(() => {
+      throw new Error("app bug");
+    });
+    host.subscribeJob("job-1", broken);
+    const heard = compute.subscribe.mock.calls.at(-1)![1];
+    for (const event of history().slice(0, 3)) expect(() => heard(event)).toThrow("app bug");
+    expect(() => heard(history()[3])).toThrow("app bug");
+    expect(onPredictions).toHaveBeenCalledTimes(1);
+  });
+
+  it("drops what the result names outside derivatives/sleap/, in one warning however often it is replayed", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { onPredictions, follow } = await submitted();
+    const predictions = [WRITTEN, "../../etc/passwd.slp", 42];
+    follow(history(predictions).slice(0, 3));
+    follow(history(predictions));
+    expect(onPredictions.mock.calls).toEqual([["job-1", [{ dandisetId: "000398", path: WRITTEN }]]]);
+    expect(warn.mock.calls).toEqual([
+      [
+        `Ignored predictions job job-1 reported: "../../etc/passwd.slp" has an empty, '.' or '..' segment; 42 is not a path.`,
+      ],
+    ]);
+    warn.mockRestore();
+  });
+
+  it("warns of a result that is not an object, rather than throwing into the subscription", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { onPredictions, host, compute } = await submitted();
+    host.subscribeJob("job-1", vi.fn());
+    const heard = compute.subscribe.mock.calls.at(-1)![1];
+    const nullResult = { topic: "job.result", seq: 3, data: null } as unknown as JobEvent;
+    for (const event of [status(2, "running"), nullResult, status(4, "completed")]) {
+      expect(() => heard(event)).not.toThrow();
+    }
+    expect(warn.mock.calls).toEqual([["Ignored predictions job job-1 reported: the result is null, not an object."]]);
+    expect(onPredictions).not.toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it("forgets a job it was following when told to, reporting nothing when it ends", async () => {
+    const { onPredictions, follow, host, compute } = await submitted();
+    const onEvent = follow(history().slice(0, 3));
+    host.forgetJobs();
+    follow([history()[3]], onEvent);
+    expect(onPredictions).not.toHaveBeenCalled();
+    // Its later subscriptions are passed through untouched.
+    const late = vi.fn<(event: JobEvent) => void>();
+    host.subscribeJob("job-1", late);
+    expect(compute.subscribe).toHaveBeenLastCalledWith("job-1", late);
+  });
+
+  it("takes up no job whose submission was still on its way when told to forget", async () => {
+    const onPredictions = vi.fn();
+    const { host, compute } = setup([CARD], { onPredictions });
+    host.remember({ ...VIDEO, ref: project });
+    let land!: (submitted: { jobId: string }) => void;
+    compute.submit.mockImplementationOnce(() => new Promise((resolve) => (land = resolve)));
+    const submitting = host.submitJob(track(), project);
+    await vi.waitFor(() => expect(compute.submit).toHaveBeenCalled());
+    host.forgetJobs();
+    land({ jobId: "job-1" });
+    expect(await submitting).toEqual({ jobId: "job-1" });
+    const onEvent = vi.fn<(event: JobEvent) => void>();
+    host.subscribeJob("job-1", onEvent);
+    expect(compute.subscribe).toHaveBeenLastCalledWith("job-1", onEvent);
+
+    // A job submitted after that is followed as before.
+    compute.submit.mockResolvedValueOnce({ jobId: "job-2" });
+    await host.submitJob(track(), project);
+    host.subscribeJob("job-2", vi.fn());
+    const heard = compute.subscribe.mock.calls.at(-1)![1];
+    for (const event of history()) heard(event);
+    expect(onPredictions.mock.calls).toEqual([["job-2", [{ dandisetId: "000398", path: WRITTEN }]]]);
+  });
+
+  it.each([
+    ["fails after its result", history([WRITTEN], "failed")],
+    ["is canceled after its result", history([WRITTEN], "canceled")],
+    ["completes naming nothing it can open", history(["sub-01/raw.slp"])],
+    ["completes naming nothing", history([])],
+    ["completes with no result", [status(1, "running"), status(2, "completed")]],
+  ])("reports nothing for a job that %s", async (_, events) => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { onPredictions, follow } = await submitted();
+    follow(events);
+    follow(history());
+    expect(onPredictions).not.toHaveBeenCalled();
+    vi.restoreAllMocks();
+  });
+
+  it.each<[string, TrackJobSpec | TrainJobSpec, HostRef | null]>([
+    ["a train job", train({ labels_path: LABELS.url }), project],
+    ["a track job submitted from no project on EMBER", track(), null],
+  ])("watches no subscription to %s", async (_, spec, ref) => {
+    const { onPredictions, follow, compute } = await submitted(spec, ref);
+    const onEvent = follow(history());
+    expect(compute.subscribe).toHaveBeenLastCalledWith("job-1", onEvent);
+    expect(onPredictions).not.toHaveBeenCalled();
+  });
+
+  it("watches nothing when the page does not listen for predictions", async () => {
+    const { host, compute } = setup();
+    host.remember({ ...VIDEO, ref: project });
+    await host.submitJob(track(), project);
+    const onEvent = vi.fn<(event: JobEvent) => void>();
+    host.subscribeJob("job-1", onEvent);
+    expect(compute.subscribe).toHaveBeenLastCalledWith("job-1", onEvent);
   });
 });

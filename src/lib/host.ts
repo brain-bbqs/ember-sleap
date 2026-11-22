@@ -1,6 +1,7 @@
 import { base64ToBytes } from "./base64";
 import {
   INLINE_LABELS_REFUSED,
+  isTerminalEvent,
   TRAIN_NEEDS_LABELS,
   type ArchiveRef,
   type ComputeClient,
@@ -8,10 +9,12 @@ import {
   type JobRequest,
 } from "./computeClient";
 import type { ProjectStorage } from "./emberStorage";
-import { fromHostRef } from "./hostRef";
+import { fromHostRef, type EmberLocation } from "./hostRef";
 import { listModels, type ModelSource } from "./modelCatalogue";
+import { readPredictions } from "./predictions";
 import type {
   HostRef,
+  JobEvent,
   JobSpec,
   ModelCard,
   ModelQuery,
@@ -26,6 +29,13 @@ export interface HostDeps {
   modelSources: ModelSource[];
   compute: ComputeClient;
   onModelWarning?: (sourceName: string, error: unknown) => void;
+  /**
+   * Hears the predictions files a track job wrote when it completes, once per job: what its
+   * `job.result` names, as files in the dandiset the job was submitted from (see predictions.ts).
+   * The host reads them from the app's own subscriptions, so a job the app stops following before
+   * it ends goes unreported, and so does one submitted before the page's last `forgetJobs`.
+   */
+  onPredictions?: (jobId: string, files: EmberLocation[]) => void;
 }
 
 /** The callbacks the app is mounted with, plus what the page tells the host as it hands files over. */
@@ -35,6 +45,11 @@ export interface PageHost extends Required<SleapHost> {
    * and name what the project's saves wrote once it has been saved.
    */
   remember(file: OpenRequest): void;
+  /**
+   * Stops reporting the predictions of every job submitted so far, one whose submission is still on
+   * its way included, as closing the project does: they belong to an app that is gone.
+   */
+  forgetJobs(): void;
 }
 
 /** What the host knows of the links and models a job spec may name. */
@@ -122,11 +137,22 @@ interface OpenedProject {
   saves: Promise<void>;
 }
 
+/** A track job whose predictions are still to report, and what its result named once it arrives. */
+interface TrackedJob {
+  dandisetId: string;
+  predictions?: EmberLocation[];
+}
+
 const settled = () => undefined;
 
-export function createSleapHost({ storage, modelSources, compute, onModelWarning }: HostDeps): PageHost {
+export function createSleapHost({ storage, modelSources, compute, onModelWarning, onPredictions }: HostDeps): PageHost {
   const files = new Map<string, ResolvedFile>();
   const cards = new Map<string, ModelCard>();
+  // Track jobs submitted from a project on EMBER, by job id, until each ends: one that has left
+  // reports nothing again, however many subscribers hear it or replay its history.
+  const tracked = new Map<string, TrackedJob>();
+  // Bumped by forgetJobs, so a submission it overtook is not tracked once it lands.
+  let jobEpoch = 0;
   // Each opened project by every link it was handed under (a refresh adds one) and by every ref the
   // app has held for it (each save returns the next), so a save reaches the link a job names.
   const projectsByLink = new Map<string, OpenedProject>();
@@ -168,6 +194,20 @@ export function createSleapHost({ storage, modelSources, compute, onModelWarning
     return namedLabels(spec, saved.file.url);
   }
 
+  /** Reads a tracked job's predictions from its result, and reports them when it completes. */
+  function observe(jobId: string, event: JobEvent): void {
+    const job = tracked.get(jobId);
+    if (!job) return;
+    if (event.topic === "job.result" && !job.predictions) {
+      const { files: written, ignored } = readPredictions(event.data, job.dandisetId);
+      if (ignored.length) console.warn(`Ignored predictions job ${jobId} reported: ${ignored.join("; ")}.`);
+      job.predictions = written;
+    } else if (isTerminalEvent(event)) {
+      tracked.delete(jobId);
+      if (event.data.state === "completed" && job.predictions?.length) onPredictions?.(jobId, job.predictions);
+    }
+  }
+
   return {
     remember(request) {
       know(request);
@@ -204,6 +244,7 @@ export function createSleapHost({ storage, modelSources, compute, onModelWarning
     listModels: listAll,
     // Async so a refused request rejects the promise rather than throwing at the call site.
     async submitJob(spec, project) {
+      const epoch = jobEpoch;
       // A job sent while a project it names is still saving names what that save wrote, as the same
       // press a moment later would.
       await Promise.all(linksOf(spec).flatMap((url) => projectsByLink.get(url)?.saves ?? []));
@@ -212,9 +253,28 @@ export function createSleapHost({ storage, modelSources, compute, onModelWarning
       // A model trained since the last listing (upstream names a train result's model_dir in the
       // inference it runs next) is looked for once more before the job is refused.
       if (ready.type === "track" && ready.model_paths.some((id) => !cards.has(id))) await listAll({});
-      return compute.submit(buildJobRequest(ready, project, context));
+      const request = buildJobRequest(ready, project, context);
+      const submitted = await compute.submit(request);
+      // Before the app hears the id, so its first subscription is already watched.
+      if (onPredictions && request.spec.type === "track" && request.project && epoch === jobEpoch) {
+        tracked.set(submitted.jobId, { dandisetId: request.project.dandisetId });
+      }
+      return submitted;
     },
-    subscribeJob: (jobId, onEvent) => compute.subscribe(jobId, onEvent),
+    forgetJobs() {
+      jobEpoch++;
+      tracked.clear();
+    },
+    subscribeJob(jobId, onEvent) {
+      if (!tracked.has(jobId)) return compute.subscribe(jobId, onEvent);
+      return compute.subscribe(jobId, (event) => {
+        try {
+          onEvent(event);
+        } finally {
+          observe(jobId, event);
+        }
+      });
+    },
     cancelJob: (jobId) => compute.cancel(jobId),
   };
 }

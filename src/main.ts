@@ -24,11 +24,11 @@ import changelog from "../CHANGELOG.md?raw";
 import { COMPUTE_PROXY_URL, createProxyComputeClient, type ComputeClient } from "./lib/computeClient";
 import { createStubCompute } from "./lib/computeStub";
 import { fetchDandiset, listOwnDandisets, listProjects, type ProjectAsset } from "./lib/emberAssets";
-import { createEmberStorage, type ProjectStorage, type SavedFile } from "./lib/emberStorage";
+import { createEmberStorage, type PathOpener, type ProjectStorage, type SavedFile } from "./lib/emberStorage";
 import type { SaveStage } from "./lib/emberUpload";
 import { createHashPool } from "./lib/etagPool";
 import { createSleapHost } from "./lib/host";
-import { fromHostRef } from "./lib/hostRef";
+import { fromHostRef, type EmberLocation } from "./lib/hostRef";
 import { createMemoryStorage } from "./lib/memoryStorage";
 import type { ModelSource } from "./lib/modelCatalogue";
 import { createEmberModelSource } from "./lib/modelEmber";
@@ -36,11 +36,25 @@ import { createHuggingFaceSource } from "./lib/modelHuggingFace";
 import { createIndexSource, MODEL_INDEX_URL } from "./lib/modelIndex";
 import { createOAuth, SIGN_IN_UNAVAILABLE } from "./lib/oauth";
 import { settingsStore, STORAGE_KEY, THEME_KEY } from "./lib/settings";
-import { EMBEDDED_PAGE_EFFECTS, type HostRef, type OpenRequest, type SleapAppHandle } from "./lib/sleapContract";
-import { mockModelSource, mockProjectRequest, MOCK_PROJECT_PATH, readTestInjection } from "./lib/testInjection";
+import {
+  EMBEDDED_PAGE_EFFECTS,
+  type HostRef,
+  type OpenRequest,
+  type SleapAppHandle,
+  type TrackJobSpec,
+} from "./lib/sleapContract";
+import {
+  mockModelSource,
+  mockProjectRequest,
+  MOCK_DANDISET_ID,
+  MOCK_MODELS,
+  MOCK_PROJECT_PATH,
+  readTestInjection,
+} from "./lib/testInjection";
 import { getElements, getShell } from "./ui/elements";
 import { createEntitiesPrompt } from "./ui/entitiesDialog";
 import { createOverwritePrompt } from "./ui/overwriteDialog";
+import { createPredictionsList } from "./ui/predictionsList";
 import { renderProjects } from "./ui/projectList";
 import { loadSleapComponent, type SleapComponent } from "./ui/sleapComponent";
 
@@ -203,9 +217,9 @@ const ember = createEmberStorage({
   },
 });
 
-function pageStorage(): ProjectStorage {
+function pageStorage(): ProjectStorage & PathOpener {
   if (!injection?.mockProject) return ember;
-  const memory = createMemoryStorage();
+  const memory = createMemoryStorage({ unwritten: injection.mockPredictionsMissing });
   const shown = (saved: SavedFile) => {
     say(els.hostStatus, `Saved in memory (test injection): ${fromHostRef(saved.ref)?.path}`, "ok");
     return saved;
@@ -282,13 +296,23 @@ function modelSources(trained: ModelSource[]): ModelSource[] {
   return sources;
 }
 
+const storage = pageStorage();
 const compute = pageCompute();
+// Per page session: closing the project empties it, and nothing about it is stored.
+const predictions = createPredictionsList(els.predictions, (file) => void openPredictions(file));
 const host = createSleapHost({
-  storage: withSaveReporting(pageStorage()),
+  storage: withSaveReporting(storage),
   modelSources: modelSources(compute.trained),
   compute: compute.client,
   onModelWarning: (source, e) => console.warn(`Could not list models from ${source}:`, e),
+  // Closing the project forgets its jobs (see the close handler), so every report is the open app's.
+  onPredictions: (_jobId, files) => predictions.add(files),
 });
+
+/** The line under the project's title saying where it is. */
+function locationLine({ dandisetId, path }: EmberLocation): string {
+  return `${dandisetId === MOCK_DANDISET_ID ? "Test injection" : `Dandiset ${dandisetId}`} · ${path}`;
+}
 
 async function recheckGate(dandisetId: string): Promise<void> {
   const flagged = await readHumanSubjects(await configFor(dandisetId));
@@ -321,10 +345,35 @@ async function openFromEmber(dandisetId: string, project: ProjectAsset): Promise
   try {
     const request = await ember.open(dandisetId, project);
     if (!isCurrent()) return;
-    await openProject(request, `Dandiset ${dandisetId} · ${project.path}`, isCurrent);
+    await openProject(request, locationLine({ dandisetId, path: project.path }), isCurrent);
     if (isCurrent()) say(els.openStatus, "");
   } catch (e) {
     if (isCurrent()) say(els.openStatus, friendlyError(e, MESSAGES), "err");
+  }
+}
+
+const DISCARD_FOR_PREDICTIONS = "The open project has unsaved changes. Open the predictions without saving them?";
+
+/**
+ * Opens predictions a job wrote in place of the project open now, as the picker opens a project:
+ * the latest click wins, and edits not yet saved are only dropped once the person says so.
+ */
+async function openPredictions(file: EmberLocation): Promise<void> {
+  // Bumped before asking, so a "no" also stops an earlier open, which would drop the same edits.
+  const seq = ++openSeq;
+  const isCurrent = () => seq === openSeq;
+  const askedFirst = hasEdits();
+  if (askedFirst && !window.confirm(DISCARD_FOR_PREDICTIONS)) return predictions.done();
+  predictions.opening(file);
+  try {
+    const request = await storage.openPath(file.dandisetId, file.path);
+    if (!isCurrent()) return;
+    // Edits made while it loaded are the person's too.
+    if (!askedFirst && !confirmDiscard(DISCARD_FOR_PREDICTIONS)) return predictions.done();
+    await openProject(request, locationLine(file), isCurrent);
+    if (isCurrent()) predictions.done();
+  } catch (e) {
+    if (isCurrent()) predictions.failed(file, friendlyError(e, MESSAGES));
   }
 }
 
@@ -395,8 +444,12 @@ function adoptStoredTokens(): void {
   renderAuth();
 }
 
+function hasEdits(): boolean {
+  return app?.isDirty() ?? false;
+}
+
 function confirmDiscard(question: string): boolean {
-  return !app?.isDirty() || window.confirm(question);
+  return !hasEdits() || window.confirm(question);
 }
 
 const callbackTokens = oauth
@@ -445,6 +498,11 @@ els.openForm.addEventListener("submit", (e) => {
 
 els.closeProjectBtn.addEventListener("click", () => {
   if (!confirmDiscard("Close the project without saving your changes?")) return;
+  // Predictions still opening would otherwise bring the card back once they arrive, and a job of
+  // this project's would list its predictions under the next one.
+  openSeq++;
+  host.forgetJobs();
+  predictions.clear();
   app?.unmount();
   app = null;
   els.appCard.hidden = true;
@@ -454,14 +512,23 @@ els.closeProjectBtn.addEventListener("click", () => {
 
 // The embedded app is mounted with its own beforeunload turned off, so the page asks instead.
 window.addEventListener("beforeunload", (e) => {
-  if (app?.isDirty()) e.preventDefault();
+  if (hasEdits()) e.preventDefault();
 });
 
 const params = new URLSearchParams(window.location.search);
 els.dandisetInput.value = extractDandisetId(params.get("dandiset") ?? "") || (stored?.dandisetId ?? "");
 
 if (injection?.mockProject) {
-  void openProject(mockProjectRequest(), `Test injection · ${MOCK_PROJECT_PATH}`);
+  const mock = mockProjectRequest();
+  const opening = openProject(mock, locationLine({ dandisetId: MOCK_DANDISET_ID, path: MOCK_PROJECT_PATH }));
+  // Inference on the mock project, submitted and followed through the host as the app does it, so
+  // its predictions reach the list through the same checks a finished job's do.
+  if (injection.mockPredictions) {
+    const spec: TrackJobSpec = { type: "track", data_path: mock.url, model_paths: [MOCK_MODELS[0].id] };
+    void opening
+      .then(() => host.submitJob(spec, mock.ref))
+      .then(({ jobId }) => host.subscribeJob(jobId, () => undefined));
+  }
 } else if (params.has("dandiset")) {
   void listDandiset(els.dandisetInput.value);
 }

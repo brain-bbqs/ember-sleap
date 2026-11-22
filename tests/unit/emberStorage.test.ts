@@ -8,7 +8,12 @@ import {
   resolveDownloadUrl,
   type ProjectAsset,
 } from "../../src/lib/emberAssets";
-import { createEmberStorage, type EmberStorageOptions, type OverwriteChoice } from "../../src/lib/emberStorage";
+import {
+  createEmberStorage,
+  notOnEmberYet,
+  type EmberStorageOptions,
+  type OverwriteChoice,
+} from "../../src/lib/emberStorage";
 import { putAsset } from "../../src/lib/emberUpload";
 import { baseName } from "../../src/lib/fileType";
 import { toHostRef } from "../../src/lib/hostRef";
@@ -103,6 +108,54 @@ describe("open", () => {
 
   it("describes no link it did not hand out", () => {
     expect(setup().storage.describe("https://elsewhere.test/x")).toBe(null);
+  });
+});
+
+describe("openPath", () => {
+  const PREDICTIONS = "derivatives/sleap/sub-01/beh/sub-01_desc-predictionsCamTop_pose.slp";
+
+  it("looks the asset up by its path and resolves it as a listed project is, so it can be renewed and named", async () => {
+    draft.add(PREDICTIONS);
+    const { options, storage } = setup();
+    const opened = await storage.openPath("000398", PREDICTIONS);
+    expect(opened).toEqual({
+      url: "https://s3.test/present?sig=1",
+      fileType: "slp",
+      name: "sub-01_desc-predictionsCamTop_pose.slp",
+      ref: ref(PREDICTIONS),
+    });
+    expect(findByPath).toHaveBeenCalledWith(cfgFor("000398"), PREDICTIONS);
+    expect(resolveUrl).toHaveBeenCalledWith(cfgFor("000398"), "present", options.fetch);
+    expect(storage.describe(opened.url)).toEqual({
+      dandisetId: "000398",
+      assetId: "present",
+      path: PREDICTIONS,
+      downloadUrl: "https://api.test/api/assets/present/download/",
+    });
+    expect((await storage.refreshUrl({ ...opened })).url).toBe("https://s3.test/present?sig=2");
+  });
+
+  it("opens a package as a package", async () => {
+    const path = "derivatives/sleap/sub-01/beh/sub-01_desc-predictionsCamTop_pose.pkg.slp";
+    draft.add(path);
+    expect((await setup().storage.openPath("000398", path)).fileType).toBe("pkg.slp");
+  });
+
+  it("says a file not on EMBER yet may still be being written, resolving nothing", async () => {
+    const { storage } = setup();
+    await expect(storage.openPath("000398", PREDICTIONS)).rejects.toThrow(new Error(notOnEmberYet(PREDICTIONS)));
+    expect(notOnEmberYet(PREDICTIONS)).toBe(
+      `${PREDICTIONS} is not on EMBER yet: the job may still be writing it. Try again in a moment.`,
+    );
+    expect(resolveUrl).not.toHaveBeenCalled();
+  });
+
+  it("refuses a path naming no SLEAP project before asking the archive", async () => {
+    const { options, storage } = setup();
+    await expect(storage.openPath("000398", "derivatives/sleap/sub-01/beh/x.nwb")).rejects.toThrow(
+      "derivatives/sleap/sub-01/beh/x.nwb is not a SLEAP project (.slp or .pkg.slp).",
+    );
+    expect(options.config).not.toHaveBeenCalled();
   });
 });
 

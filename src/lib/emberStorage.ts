@@ -27,9 +27,9 @@ import {
 } from "./emberAssets";
 import { putAsset, type SaveStage } from "./emberUpload";
 import type { EtagHasher } from "./etagPool";
-import { baseName, fileTypeOfPath, isProjectType } from "./fileType";
+import { baseName, fileTypeOfPath, isProjectType, projectTypeOf } from "./fileType";
 import { fromHostRef, toHostRef, type EmberLocation } from "./hostRef";
-import type { HostRef, OpenRequest, ResolvedFile } from "./sleapContract";
+import type { FileType, HostRef, OpenRequest, ResolvedFile } from "./sleapContract";
 
 /** What a save wrote: the ref the app keeps for it, and the file, by a link this storage can renew and describe. */
 export interface SavedFile {
@@ -51,9 +51,24 @@ export interface ProjectStorage {
   describe(url: string): ArchiveRef | null;
 }
 
-export interface EmberStorage extends ProjectStorage {
+/** Opening a project by where it sits rather than from a listing, as the predictions a job wrote are opened. */
+export interface PathOpener {
+  /**
+   * The project at `path` in the dandiset's draft, resolved to what the app's `open` takes. Rejects
+   * with {@link notOnEmberYet}'s message when no asset is at `path` (a worker may still be writing
+   * it), and when `path` names no SLEAP project.
+   */
+  openPath(dandisetId: string, path: string): Promise<OpenRequest>;
+}
+
+export interface EmberStorage extends ProjectStorage, PathOpener {
   /** A listed project, resolved to what the app's `open` takes. */
   open(dandisetId: string, project: ProjectAsset): Promise<OpenRequest>;
+}
+
+/** Why a file a job reported does not open: nothing is at its path, which a worker may still be writing. */
+export function notOnEmberYet(path: string): string {
+  return `${path} is not on EMBER yet: the job may still be writing it. Try again in a moment.`;
 }
 
 /** What to do when a save's labels file is already there: go over it, save beside it, or stop. */
@@ -124,6 +139,17 @@ export function createEmberStorage(options: EmberStorageOptions): EmberStorage {
 
   async function resolve(cfg: ArchiveConfig, asset: Located): Promise<string> {
     return locate(cfg, asset, await resolveDownloadUrl(cfg, asset.asset_id, fetch));
+  }
+
+  /** A project asset as the app's `open` takes it, by a link this storage can renew and describe. */
+  async function opened(
+    cfg: ArchiveConfig,
+    dandisetId: string,
+    asset: Located,
+    fileType: FileType,
+  ): Promise<OpenRequest> {
+    const url = await resolve(cfg, asset);
+    return { url, fileType, name: baseName(asset.path), ref: toHostRef({ dandisetId, path: asset.path }) };
   }
 
   /** Writes the derivative dataset's description and ignore file once; a failure only warns. */
@@ -232,14 +258,15 @@ export function createEmberStorage(options: EmberStorageOptions): EmberStorage {
 
   return {
     async open(dandisetId, project) {
+      return opened(await config(dandisetId), dandisetId, project, project.fileType);
+    },
+
+    async openPath(dandisetId, path) {
+      const fileType = projectTypeOf(path);
       const cfg = await config(dandisetId);
-      const url = await resolve(cfg, project);
-      return {
-        url,
-        fileType: project.fileType,
-        name: baseName(project.path),
-        ref: toHostRef({ dandisetId, path: project.path }),
-      };
+      const asset = await findAssetByPath(cfg, path);
+      if (!asset) throw new Error(notOnEmberYet(path));
+      return opened(cfg, dandisetId, asset, fileType);
     },
 
     save: (file, name, ref) => queued(() => saveNow(file, name, ref)),

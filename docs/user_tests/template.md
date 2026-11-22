@@ -37,6 +37,12 @@ Copy this file to `docs/user_tests/<tester>.md`, fill it in, and open it as a PR
 - [ ] "Make an edit" then "Train a model" (signed in) saves a `..._desc-trainingset<Source><time>_pose.pkg.slp` beside the labels file, and the log names it; the edit stays unsaved
 - [ ] "Find models to predict with" then "Predict" runs a second job
 - [ ] After training, the trained model is in the model list, and "Predict" with it runs
+- [ ] When a "Predict" job completes, its `..._desc-predictions<Source>_pose.slp` is listed once under "Predictions" below the app
+- [ ] Clicking that file says it is not on EMBER yet, with "Try again" (the simulated compute writes nothing)
+- [ ] On `?test&mock_project&mock_predictions`, clicking the listed file opens it in the app, with its path under the title
+- [ ] There, "Make an edit" then Ctrl+S saves `..._desc-labels<Source>_pose.slp` beside the predictions, not over them
+- [ ] With unsaved edits, clicking a predictions file asks first, and so does an edit made while one is still loading; "Close project" empties the list
+- [ ] Pressing "Try again" from the keyboard leaves focus on the file's own button, not at the top of the page
 - [ ] "Cancel job" on a running job ends it as canceled
 
 ## Cross-cutting
