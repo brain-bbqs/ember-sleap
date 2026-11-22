@@ -63,6 +63,9 @@ Everything we build is static and served by GitHub Pages. We run no servers dedi
 
 A sketch to propose to upstream in a design proposal issue (draft: [UPSTREAM_PROPOSAL.md](UPSTREAM_PROPOSAL.md)). Names and shapes are open for discussion.
 
+<details>
+<summary>API sketch (TypeScript)</summary>
+
 ```ts
 // @talmolab/sleap-app
 export function mountSleapApp(el: HTMLElement, options: MountOptions): SleapAppHandle;
@@ -113,6 +116,8 @@ export interface ModelCard {
   files: { role: "config" | "checkpoint"; url: string; sha256?: string }[];
 }
 ```
+
+</details>
 
 Notes:
 
