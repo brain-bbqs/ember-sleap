@@ -193,10 +193,10 @@ Order and process:
 - PRs 1 and 2 are plain fixes; send them as soon as they are ready.
 - PRs 3 to 6 are refactors with no visible change.
 - PRs 7 and 8 define the public contract. Open the design proposal issue on `talmolab/sleap-app` ([draft](UPSTREAM_PROPOSAL.md)) before writing them.
+- 7c touches the most-changed code (`connectStore.ts`). Raise it in the proposal early, send it last.
 
 Other repositories:
 
-- `talmolab/sleap-io.js`: possibly a small PR for declared file types in the streaming reader (PR 2).
 - `talmolab/sleap-nn`: out of scope for this plan. sleap-nn changes, its licensing and the SLEAP container are handled separately.
 
 ## ember-sleap work (this repository)
