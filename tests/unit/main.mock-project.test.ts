@@ -53,10 +53,11 @@ describe("?test&mock_project", () => {
     await vi.waitFor(() => expect(document.querySelectorAll('[data-role="predict"]').length).toBe(MOCK_MODELS.length));
   });
 
-  it("runs a training job on the stub and streams it into the job view", async () => {
+  it("runs a training job on the stub, on what the save wrote, and streams it into the job view", async () => {
     role("train").click();
     await vi.waitFor(() => expect(role("job-state").textContent).toBe("completed"), { timeout: 5000 });
-    expect(role("job-log").textContent).toContain("Input: test-injection-mock-project.slp (slp)");
+    expect(role("job-log").textContent).toContain("Input: sub-mock_desc-labelsTestInjectionMockProject_pose.slp (slp)");
+    expect(role("job-log").textContent).not.toContain("Input: test-injection-mock-project.slp");
   });
 
   it("lists the model it trained beside the fixed ones, and predicts with it", async () => {
@@ -71,6 +72,21 @@ describe("?test&mock_project", () => {
     expect(role("job-log").textContent).toContain(
       "derivatives/sleap/sub-mock/beh/sub-mock_desc-predictionsTestInjectionMockProject_pose.slp",
     );
+  });
+
+  it("trains on unsaved edits offline, keeping them in memory as a training package first", async () => {
+    role("edit").click();
+    role("train").click();
+    const name = /sub-mock_desc-trainingsetTestInjectionMockProject\d{14}_pose\.pkg\.slp/;
+    await vi.waitFor(() =>
+      expect(el("host-status").textContent).toMatch(
+        new RegExp(`^Saved in memory \\(test injection\\): derivatives/sleap/sub-mock/beh/${name.source}$`),
+      ),
+    );
+    await vi.waitFor(() => expect(role("job-id").textContent).toBe("Job stub-3"));
+    await vi.waitFor(() => expect(role("job-state").textContent).toBe("completed"), { timeout: 5000 });
+    expect(role("job-log").textContent).toMatch(new RegExp(`Input: ${name.source} \\(pkg\\.slp\\)`));
+    expect(role("dirty").hidden).toBe(false);
   });
 
   it("says sign-in is not available yet where the person is looking", () => {

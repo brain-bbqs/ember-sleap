@@ -14,10 +14,13 @@ import {
   labelsSavePath,
   modelFolderPath,
   numberedLabelsPath,
+  packageClock,
   poseFileName,
   posePath,
   predictionsPath,
   suggestedEntities,
+  trainingPackagePath,
+  trainingPackagePrefix,
   type BidsEntities,
   type PoseDescLabel,
   type PoseEntities,
@@ -138,6 +141,7 @@ describe("isLabelsPath", () => {
     ["derivatives/sleap/sub-01/beh/sub-01_desc-predictions_pose.slp", false],
     ["derivatives/sleap/sub-01/beh/sub-01_desc-labels-x_pose.slp", false],
     ["derivatives/sleap/sub-01/beh/sub-01_desc-labels_pose.nwb", false],
+    ["derivatives/sleap/sub-01/beh/sub-01_desc-trainingsetCamTop20261122153000_pose.pkg.slp", false],
     ["derivatives/sleap/models/mice-v1/train.pkg.slp", false],
     ["sub-01/beh/sub-01_desc-labels_pose.slp", false],
   ])("%s: %s", (path, expected) => {
@@ -265,6 +269,88 @@ describe("predictionsPath", () => {
       );
     },
   );
+});
+
+describe("trainingPackagePath", () => {
+  const at = new Date("2026-11-22T15:30:07.891Z");
+
+  it.each<[string, BidsEntities, string]>([
+    [
+      "sub-01/ses-02/beh/cam-top.slp",
+      { sub: "01", ses: "02" },
+      "sub-01/ses-02/beh/sub-01_ses-02_desc-trainingsetCamTop20261122153007_pose.pkg.slp",
+    ],
+    // From a project already saved as labels: the labels file's word, beside it.
+    [
+      "derivatives/sleap/sub-01/beh/sub-01_acq-top_desc-labelsCamTop_pose.slp",
+      { sub: "01" },
+      "sub-01/beh/sub-01_acq-top_desc-trainingsetCamTop20261122153007_pose.pkg.slp",
+    ],
+    ["sub-01/labels.slp", { sub: "01" }, "sub-01/beh/sub-01_desc-trainingset20261122153007_pose.pkg.slp"],
+    // From an earlier training package: its source's word, with this run's time.
+    [
+      "derivatives/sleap/sub-01/beh/sub-01_desc-trainingsetCamTop20261101090000_pose.pkg.slp",
+      { sub: "01" },
+      "sub-01/beh/sub-01_desc-trainingsetCamTop20261122153007_pose.pkg.slp",
+    ],
+  ])("%s goes to %s", (source, entities, expected) => {
+    expect(trainingPackagePath(source, entities, at)).toBe(`derivatives/sleap/${expected}`);
+  });
+
+  it("names each second's run apart, by UTC time", () => {
+    const later = new Date("2026-11-22T10:30:08.000-05:00");
+    expect(trainingPackagePath("sub-01/x.slp", { sub: "01" }, later)).toBe(
+      "derivatives/sleap/sub-01/beh/sub-01_desc-trainingsetX20261122153008_pose.pkg.slp",
+    );
+  });
+
+  it("gives a training package's predictions its source's", () => {
+    const source = "sub-01/beh/cam-top.slp";
+    const snapshot = trainingPackagePath(source, { sub: "01" }, at);
+    expect(predictionsPath(snapshot, { sub: "01" })).toBe(predictionsPath(source, { sub: "01" }));
+  });
+
+  it.each([
+    // A plain source's labels are an .slp, so the package's, a package still, are a file of their own.
+    ["cam-top.slp", "sub-01_desc-labelsCamTop_pose.slp", "sub-01_desc-labelsCamTop_pose.pkg.slp"],
+    // A package source's labels are a package already, so the two are one file.
+    ["cam-top.pkg.slp", "sub-01_desc-labelsCamTop_pose.pkg.slp", "sub-01_desc-labelsCamTop_pose.pkg.slp"],
+  ])("saves the labels of a training package made from %s under its source's word", (name, own, packaged) => {
+    const source = `sub-01/beh/${name}`;
+    const snapshot = trainingPackagePath(source, { sub: "01" }, at);
+    expect(labelsSavePath(source, name, { sub: "01" })).toBe(`derivatives/sleap/sub-01/beh/${own}`);
+    expect(labelsSavePath(snapshot, "snapshot.pkg.slp", { sub: "01" })).toBe(
+      `derivatives/sleap/sub-01/beh/${packaged}`,
+    );
+  });
+
+  it("lists every package of a source under one prefix, and no other source's", () => {
+    const prefix = trainingPackagePrefix("sub-01/acq-top_cam.slp", { sub: "01" });
+    expect(prefix).toBe("derivatives/sleap/sub-01/beh/sub-01_acq-top_desc-trainingsetCam");
+    expect(trainingPackagePath("sub-01/acq-top_cam.slp", { sub: "01" }, at).startsWith(prefix)).toBe(true);
+    expect(trainingPackagePath("sub-01/acq-side_cam.slp", { sub: "01" }, at).startsWith(prefix)).toBe(false);
+  });
+
+  it("keeps a desc that only starts like a training set's as a word", () => {
+    expect(labelsSavePath("sub-01/sub-01_desc-trainingsetA_cam.slp", "x.slp", { sub: "01" })).toBe(
+      "derivatives/sleap/sub-01/beh/sub-01_desc-labelsTrainingsetACam_pose.slp",
+    );
+  });
+});
+
+describe("packageClock", () => {
+  it("tells the time, but moves at least a second on from the time it told before", () => {
+    let now = Date.parse("2026-11-22T15:30:00.200Z");
+    const next = packageClock(() => new Date(now));
+    const told = [next(), next()];
+    now += 5000;
+    told.push(next());
+    expect(told.map((t) => t.toISOString())).toEqual([
+      "2026-11-22T15:30:00.200Z",
+      "2026-11-22T15:30:01.200Z",
+      "2026-11-22T15:30:05.200Z",
+    ]);
+  });
 });
 
 describe("numbered labels paths", () => {

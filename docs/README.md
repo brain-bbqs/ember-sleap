@@ -13,6 +13,7 @@ Nothing is written to `localStorage` or to the archive, so all of the above are 
 
 `mock_project` hands a synthesized project to the same open path a project from EMBER takes, served from a `data:` URL that, like an archive link, says nothing about the file's type.
 Saves go to an in-memory store that places them exactly where EMBER storage would, the model list is two fixed cards (plus any model trained on the stub since), and jobs run on the in-browser compute stub with short ticks.
+Training after "Make an edit" keeps the edits in that store as a training package, so it runs offline too; saved files are named by `memory://` links that nothing fetches.
 The Chromatic project-open snapshot uses this to capture the state deterministically.
 
 ## Deep links

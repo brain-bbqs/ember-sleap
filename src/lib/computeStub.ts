@@ -3,8 +3,9 @@ import { isModelHead, type ModelSource } from "./modelCatalogue";
 import { emberModelId } from "./modelEmber";
 import type { JobEvent, ModelCard, TrackJobSpec, TrainJobSpec } from "./sleapContract";
 import {
+  INLINE_LABELS_REFUSED,
   isTerminalEvent,
-  TRAIN_NEEDS_SAVED_PROJECT,
+  TRAIN_NEEDS_LABELS,
   type ClearTimer,
   type ComputeClient,
   type JobRequest,
@@ -45,15 +46,23 @@ const status = (state: string, detail?: string): ScriptedEvent => ({
 });
 const log = (line: string): ScriptedEvent => ({ topic: "job.log", data: { line, progress: false } });
 
+/** A line per input, and an indented one after it naming the EMBER asset a worker would renew it from. */
 function inputLogs(request: JobRequest): ScriptedEvent[] {
-  return request.inputs.map((input) => log(`Input: ${input.name} (${input.fileType})`));
+  return request.inputs.flatMap(({ name, fileType, archive }) => {
+    const line = log(`Input: ${name} (${fileType})`);
+    if (!archive) return [line];
+    const { dandisetId, path, assetId, downloadUrl } = archive;
+    return [line, log(`  from EMBER dandiset ${dandisetId}: ${path}, asset ${assetId} (${downloadUrl})`)];
+  });
 }
 
 const round = (value: number) => Math.round(value * 1e4) / 1e4;
 
 function trainScript(request: JobRequest, spec: TrainJobSpec, jobNumber: number): ScriptedEvent[] {
-  // The host refuses these before submitting; the stub refuses them too, as the proxy would.
-  if (!spec.labels_path || spec.labels_content) return [status("failed", TRAIN_NEEDS_SAVED_PROJECT)];
+  // The host saves inline labels to EMBER and refuses a spec with none before submitting; the stub
+  // refuses both too, as the proxy would.
+  if (spec.labels_content) return [status("failed", INLINE_LABELS_REFUSED)];
+  if (!spec.labels_path) return [status("failed", TRAIN_NEEDS_LABELS)];
   const epochs = spec.max_epochs ?? DEFAULT_EPOCHS;
   const events: ScriptedEvent[] = [status("queued"), status("running"), ...inputLogs(request)];
   let trainLoss = 0;

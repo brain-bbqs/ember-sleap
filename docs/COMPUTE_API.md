@@ -65,7 +65,13 @@ The difference from a SLEAP Connect worker is that `labels_path`, `data_path` an
     {
       "url": "https://ember-open-data.s3.amazonaws.com/blobs/76a/db8/76adb8e6-…",
       "fileType": "pkg.slp",
-      "name": "train.pkg.slp"
+      "name": "train.pkg.slp",
+      "archive": {
+        "dandisetId": "000398",
+        "assetId": "…",
+        "path": "sub-NONE/train.pkg.slp",
+        "downloadUrl": "https://api-dandi.emberarchive.org/api/assets/…/download/"
+      }
     }
   ],
   "models": [],
@@ -86,7 +92,13 @@ An inference job:
     {
       "url": "https://ember-open-data.s3.amazonaws.com/blobs/2f2/eb3/2f2eb3a9-…",
       "fileType": "avi",
-      "name": "annotated_frames.avi"
+      "name": "annotated_frames.avi",
+      "archive": {
+        "dandisetId": "000398",
+        "assetId": "…",
+        "path": "…/annotated_frames.avi",
+        "downloadUrl": "https://api-dandi.emberarchive.org/api/assets/…/download/"
+      }
     }
   ],
   "models": [
@@ -106,18 +118,25 @@ An inference job:
 }
 ```
 
-| Field     | Meaning                                                                                                                                     |
-| --------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| `spec`    | SLEAP's job spec. `type` is `"train"` or `"track"`.                                                                                         |
-| `inputs`  | Every URL the spec names, each with its `fileType` (`slp`, `pkg.slp`, `mp4`, `avi` or `h5`) and a display `name`.                           |
-| `models`  | For a track job, each id in `model_paths` expanded to the files the worker must fetch: `config` and `checkpoint`, with `sha256` when known. |
-| `project` | The dandiset results are written back to, and the EMBER path of the project the job came from.                                              |
+| Field     | Meaning                                                                                                                                      |
+| --------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `spec`    | SLEAP's job spec. `type` is `"train"` or `"track"`.                                                                                          |
+| `inputs`  | Every URL the spec names, each with its `fileType` (`slp`, `pkg.slp`, `mp4`, `avi` or `h5`), a display `name` and its EMBER `archive` asset. |
+| `models`  | For a track job, each id in `model_paths` expanded to the files the worker must fetch: `config` and `checkpoint`, with `sha256` when known.  |
+| `project` | The dandiset results are written back to, and the EMBER path of the project the job came from.                                               |
 
 - **File types are declared, never guessed.** EMBER download links and S3 blob URLs have no file extension, and sleap-nn picks `.slp` versus video handling from the extension of `--data_path`.
   The proxy (or the container) must use `fileType`, for example by downloading to a local file named with the right extension before calling sleap-nn.
-- **Training from saved projects only.** A train spec sent by this page always has `labels_path` pointing at a `.pkg.slp` (or `.slp`) saved on EMBER, and its `labels_content` is absent, `null` or empty: the page refuses any other train spec before it reaches a compute client.
-- Presigned S3 links expire after 6 hours, which a queued job can outlive.
-  The page may also send the stable EMBER API download URL (`https://api-dandi.emberarchive.org/api/assets/{asset_id}/download/`) for the same asset; the proxy should prefer re-resolving through the API with the service account over trusting an expired link.
+- **Inputs carry archive references.** Presigned S3 links expire after 6 hours, which a queued job can outlive.
+  So each input the page resolved from an EMBER asset carries `archive`: the asset's `dandisetId`, `assetId` and `path`, and `downloadUrl`, its stable API endpoint (`https://api-dandi.emberarchive.org/api/assets/{asset_id}/download/`).
+  The proxy should download through `downloadUrl` with the service account, which renews the link, rather than trust a `url` that may have expired.
+- **Training from files on EMBER only.** A train spec sent by this page always has `labels_path` naming a `.pkg.slp` (or `.slp`) on EMBER, and never carries `labels_content`.
+  When sleap-app trains on the labels in its window (`labels_content`, the base64 of an `.slp` file), the page first saves them to the draft as a training package beside the project, `derivatives/sleap/sub-<label>/[ses-<label>/]beh/…_desc-trainingset<Source><yyyymmddhhmmss>_pose.pkg.slp` (UTC, one per run; a time another run already took moves on a second), and sends that file as `labels_path`.
+  The rest of the spec is checked before that save, so a refused job leaves no package behind.
+  A train spec naming neither is refused before it reaches a compute client, and so are inline labels too large for the browser to send (about 384 MiB in Chromium), with advice to save the project and train on that.
+- **Jobs name what was saved.** Once a project has been saved, a spec naming the link it was opened under (as `labels_path`, `val_labels_path` or `data_path`) is sent naming the file its latest save wrote in `derivatives/sleap/` instead, since the opened link's bytes predate the save.
+  A train result's `labels_path` therefore echoes that saved file.
+  A job submitted while such a save is still uploading waits for it, so which file it names follows the order of the presses, not how long the upload took.
 
 ## Event stream
 

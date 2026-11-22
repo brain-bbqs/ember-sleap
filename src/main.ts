@@ -24,7 +24,7 @@ import changelog from "../CHANGELOG.md?raw";
 import { COMPUTE_PROXY_URL, createProxyComputeClient, type ComputeClient } from "./lib/computeClient";
 import { createStubCompute } from "./lib/computeStub";
 import { fetchDandiset, listOwnDandisets, listProjects, type ProjectAsset } from "./lib/emberAssets";
-import { createEmberStorage, type ProjectStorage } from "./lib/emberStorage";
+import { createEmberStorage, type ProjectStorage, type SavedFile } from "./lib/emberStorage";
 import type { SaveStage } from "./lib/emberUpload";
 import { createHashPool } from "./lib/etagPool";
 import { createSleapHost } from "./lib/host";
@@ -206,31 +206,33 @@ const ember = createEmberStorage({
 function pageStorage(): ProjectStorage {
   if (!injection?.mockProject) return ember;
   const memory = createMemoryStorage();
+  const shown = (saved: SavedFile) => {
+    say(els.hostStatus, `Saved in memory (test injection): ${fromHostRef(saved.ref)?.path}`, "ok");
+    return saved;
+  };
   return {
     ...memory,
-    save: async (file, name, ref) => {
-      const saved = await memory.save(file, name, ref);
-      say(els.hostStatus, `Saved in memory (test injection): ${fromHostRef(saved)?.path}`, "ok");
-      return saved;
-    },
+    save: (file, name, ref) => memory.save(file, name, ref).then(shown),
+    saveTrainingPackage: (file, ref) => memory.saveTrainingPackage(file, ref).then(shown),
   };
 }
 
 /**
- * Archive failures in words a person can act on, and a line saying where a save landed. Saves are
- * reported one at a time, so one save's warnings never end up on another's line.
+ * Archive failures in words a person can act on, and a line saying where a save, or the labels a
+ * training job was sent, landed. Saves are reported one at a time, so one save's warnings never end
+ * up on another's line.
  */
 function withSaveReporting(storage: ProjectStorage): ProjectStorage {
   if (injection?.mockProject) return storage;
-  async function report(file: Blob, name: string, ref?: HostRef): Promise<HostRef> {
+  async function report(what: string, ref: HostRef | undefined, write: () => Promise<SavedFile>): Promise<SavedFile> {
     saveWarnings.length = 0;
     try {
       // The project stays open, so asking again here, not listing again, is how a failed check retries.
       const source = fromHostRef(ref);
       if (source && unreadFlags.has(source.dandisetId)) await recheckGate(source.dandisetId);
-      const saved = await storage.save(file, name, ref);
-      const where = fromHostRef(saved)!;
-      const landed = `Saved to the draft of dandiset ${where.dandisetId}: ${where.path}`;
+      const saved = await write();
+      const where = fromHostRef(saved.ref)!;
+      const landed = `${what} to the draft of dandiset ${where.dandisetId}: ${where.path}`;
       if (saveWarnings.length) say(els.hostStatus, `${landed}. ${saveWarnings.join(" ")}`, "err");
       else say(els.hostStatus, landed, "ok");
       return saved;
@@ -240,13 +242,16 @@ function withSaveReporting(storage: ProjectStorage): ProjectStorage {
       throw new Error(message);
     }
   }
+  function inTurn(run: () => Promise<SavedFile>): Promise<SavedFile> {
+    const next = reporting.then(run);
+    reporting = next.catch(() => undefined);
+    return next;
+  }
   return {
     ...storage,
-    save(file, name, ref) {
-      const run = reporting.then(() => report(file, name, ref));
-      reporting = run.catch(() => undefined);
-      return run;
-    },
+    save: (file, name, ref) => inTurn(() => report("Saved", ref, () => storage.save(file, name, ref))),
+    saveTrainingPackage: (file, ref) =>
+      inTurn(() => report("Saved the training labels", ref, () => storage.saveTrainingPackage(file, ref))),
   };
 }
 

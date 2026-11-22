@@ -51,7 +51,9 @@ export interface ModelQuery {
 // The slices of upstream's job specs (`src/lib/sleapConnect.ts`, talmolab/sleap-app@368db85) that
 // this page reads. Upstream's full types carry more optional fields and stay assignable to these.
 // For this host, `labels_path`, `data_path` and `model_paths` hold EMBER URLs and model card ids
-// rather than paths on a worker's disk.
+// rather than paths on a worker's disk, and `labels_content` (an `.slp` file's bytes in base64, as
+// upstream sends "labels from this window") is saved to EMBER before the job goes to compute. Being
+// a string, it is capped by the browser's longest one: about 384 MiB of labels in Chromium.
 
 export interface TrainJobSpec {
   type: "train";

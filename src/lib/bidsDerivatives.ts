@@ -11,6 +11,10 @@
 // or `labels`). So `sub-01/ses-01/beh/cam-top.slp` saves to
 // `derivatives/sleap/sub-01/ses-01/beh/sub-01_ses-01_desc-labelsCamTop_pose.slp`. Predictions are
 // named the same way, as `desc-predictions<word>`, so proofreading them saves to that same file.
+// Labels a training run was sent unsaved go beside them as a package of their own,
+// `desc-trainingset<word><yyyymmddhhmmss>` (UTC). A source that is such a package reads as the word
+// between `trainingset` and its time: its predictions are its source's, and its labels take its
+// source's word but stay a `.pkg.slp`, so beside a plain `.slp` source's labels they are a file apart.
 
 export const DERIVATIVES_ROOT = "derivatives/sleap";
 export const DATASET_DESCRIPTION_PATH = `${DERIVATIVES_ROOT}/dataset_description.json`;
@@ -30,8 +34,11 @@ type KeptEntity = (typeof KEPT_ENTITIES)[number];
 /** What a pose file's name carries before its desc: the subject and session, then the kept entities. */
 export type PoseEntities = BidsEntities & Partial<Record<KeptEntity, string>>;
 
-export type PoseDesc = "labels" | "predictions";
-/** A desc label: `labels` or `predictions`, optionally followed by what tells its source apart. */
+export type PoseDesc = "labels" | "predictions" | "trainingset";
+/**
+ * A desc label: `labels`, `predictions` or `trainingset`, optionally followed by what tells its
+ * source apart and, for a training package, the run's UTC time.
+ */
 export type PoseDescLabel = `${PoseDesc}${string}`;
 export type PoseExtension = "slp" | "pkg.slp" | "nwb";
 
@@ -46,6 +53,7 @@ const LABELS_DESC = /(_desc-labels[a-zA-Z0-9]*)(_pose\.)/i;
 const POSE_SUFFIX = /_pose\.(?:pkg\.)?slp$/i;
 const GENERIC_LAST_WORD = /^(?:pose|labels)$/i;
 const POSE_DESC_PREFIX = /^(?:labels|predictions)/i;
+const TRAININGSET_DESC = /^trainingset([a-zA-Z0-9]*?)\d{14}$/i;
 const NAMES_SUBJECT_OR_SESSION = /(?:^|_)(?:sub|ses)-/;
 // BIDS datatype folders: they say what kind of data sits below, not which source it is.
 const DATATYPE_FOLDERS: ReadonlySet<string> = new Set([
@@ -165,6 +173,14 @@ function foldersBelowSubject(folders: string[]): string[] {
 }
 
 /**
+ * What a source's own desc adds to its kind: what follows `labels` or `predictions`, or what comes
+ * between `trainingset` and a training package's time.
+ */
+function descQualifier(label: string): string {
+  return TRAININGSET_DESC.exec(label)?.[1] ?? label.replace(POSE_DESC_PREFIX, "");
+}
+
+/**
  * Splits a source into the entities its pose files keep and the CamelCase word that tells it apart
  * (see the top of this module). Its own sub and ses are dropped, since the pose file has its own.
  */
@@ -177,7 +193,7 @@ function sourceParts(sourcePath: string): { kept: Partial<Record<KeptEntity, str
   for (const token of stem(fileName).split("_")) {
     const [, key = "", label = ""] = /^([a-zA-Z0-9]+)-(.*)$/.exec(token) ?? [];
     if (key === "sub" || key === "ses") continue;
-    if (key === "desc" && qualifier === undefined) qualifier = label.replace(POSE_DESC_PREFIX, "");
+    if (key === "desc" && qualifier === undefined) qualifier = descQualifier(label);
     else if (isKeptEntity(key) && !kept[key] && isKeptLabel(key, label)) kept[key] = label;
     else rest.push(token);
   }
@@ -190,9 +206,15 @@ function sourceParts(sourcePath: string): { kept: Partial<Record<KeptEntity, str
   return { kept, word };
 }
 
-function sourcePosePath(sourcePath: string, desc: PoseDesc, { sub, ses }: BidsEntities, ext: PoseExtension) {
+function sourcePosePath(
+  sourcePath: string,
+  desc: PoseDesc,
+  { sub, ses }: BidsEntities,
+  ext: PoseExtension,
+  after = "",
+) {
   const { kept, word } = sourceParts(sourcePath);
-  return posePath({ sub, ses, ...kept }, `${desc}${word}`, ext);
+  return posePath({ sub, ses, ...kept }, `${desc}${word}${after}`, ext);
 }
 
 /**
@@ -209,6 +231,33 @@ export function labelsSavePath(sourcePath: string, fileName: string, entities: B
 /** Where inference for a source writes its predictions: `desc-predictions<word>`, its labels file's twin. */
 export function predictionsPath(sourcePath: string, entities: BidsEntities): string {
   return sourcePosePath(sourcePath, "predictions", entities, "slp");
+}
+
+/**
+ * Where labels a training run was sent unsaved are kept: beside the source's labels file, as a
+ * package named `desc-trainingset<word><yyyymmddhhmmss>` for the UTC time `at`, so every run has a
+ * snapshot of its own and none goes over the labels file.
+ */
+export function trainingPackagePath(sourcePath: string, entities: BidsEntities, at: Date): string {
+  const stamp = at.toISOString().replace(/\D/g, "").slice(0, 14);
+  return sourcePosePath(sourcePath, "trainingset", entities, "pkg.slp", stamp);
+}
+
+/** What every training package of a source starts with, whatever its time. */
+export function trainingPackagePrefix(sourcePath: string, entities: BidsEntities): string {
+  return labelsPathPrefix(sourcePosePath(sourcePath, "trainingset", entities, "pkg.slp"));
+}
+
+/**
+ * The times to name training packages by: `now`, but at least a second after the one before, since
+ * a package's name only tells seconds apart.
+ */
+export function packageClock(now: () => Date): () => Date {
+  let last = Number.NEGATIVE_INFINITY;
+  return () => {
+    last = Math.max(now().getTime(), last + 1000);
+    return new Date(last);
+  };
 }
 
 /**

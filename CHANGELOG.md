@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.2
+
+#### 🚀 Enhancement
+
+- Training uses your latest saved labels, and training on unsaved edits first saves them to EMBER as a snapshot beside your labels ([#5](https://github.com/brain-bbqs/ember-sleap/pull/5))
+
 ## 0.1.1
 
 #### 🚀 Enhancement

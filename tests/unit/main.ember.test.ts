@@ -131,6 +131,15 @@ describe("a signed-in visitor on an embargoed, human-subjects dandiset", () => {
     expect(fetchMock.callsTo("/uploads/initialize/").length).toBe(0);
   });
 
+  it("keeps the edits a training job is sent to the same rule, and submits nothing", async () => {
+    role("train").click();
+    const refusal = "Confirm the human-subjects notice above before saving to this dandiset.";
+    await vi.waitFor(() => expect(role("compute-status").textContent).toBe(`Could not submit: ${refusal}`));
+    expect(el("host-status").textContent).toBe(refusal);
+    expect(role("job").hidden).toBe(true);
+    expect(fetchMock.callsTo("/uploads/initialize/").length).toBe(0);
+  });
+
   it("asks before signing out with unsaved edits, saying they could not be saved after, and stays if told no", () => {
     const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
     el("oauthSignoutBtn").click();

@@ -3,11 +3,13 @@
 // way the contract (src/lib/sleapContract.ts) says the real app will: it reads the opened file over
 // ranged requests by its declared type, saves through `host.save` (after `host.refreshUrl` when the
 // open link has expired), finds videos through `host.resolveVideo`, lists models and submits,
-// follows and cancels jobs through the host, and keeps its keyboard shortcut and page side effects
+// follows and cancels jobs through the host (training on unsaved edits sends them inline, as
+// upstream's "labels from this window" does), and keeps its keyboard shortcut and page side effects
 // inside the box it was mounted in. When the real package ships, src/ui/sleapComponent.ts mounts
 // that instead and this file goes.
 import { button, h } from "@brain-bbqs/ui";
 import { humanSize } from "@brain-bbqs/utils";
+import { blobToBase64 } from "../lib/base64";
 import type {
   HostRef,
   JobEvent,
@@ -30,6 +32,13 @@ const SIGNATURE_BYTES = 12;
 // The minimum a sleap-nn training config needs to name what it trains; the real app's training
 // dialog builds the full one.
 const STAND_IN_CONFIG = "model_config:\n  head_configs:\n    single_instance: {}\ntrainer_config:\n  max_epochs: 3\n";
+const STAND_IN_TRAINING: TrainJobSpec = {
+  type: "train",
+  config_contents: [STAND_IN_CONFIG],
+  model_types: ["single_instance"],
+  max_epochs: 3,
+  run_name: "stand-in",
+};
 
 /** What the first bytes of a file say it is, for the stand-in's "it really opened" line. */
 export function describeSignature(bytes: Uint8Array): string {
@@ -265,10 +274,12 @@ export function mountStandIn(el: HTMLElement, options: MountOptions): SleapAppHa
       }) ?? null;
   }
 
-  async function submit(spec: TrainJobSpec | TrackJobSpec): Promise<void> {
+  /** Submits the spec `build` makes for the project open now, saying why if either step fails. */
+  async function submit(build: () => Promise<TrainJobSpec | TrackJobSpec>): Promise<void> {
     say(computeStatus, "Submitting…");
+    const ref = currentRef();
     try {
-      const { jobId: id } = await host.submitJob!(spec, currentRef());
+      const { jobId: id } = await host.submitJob!(await build(), ref);
       say(computeStatus, "");
       followJob(id);
     } catch (e) {
@@ -283,7 +294,9 @@ export function mountStandIn(el: HTMLElement, options: MountOptions): SleapAppHa
     predict.dataset.role = "predict";
     // The project open now, by its current link: another may have opened, or the link renewed, since.
     predict.addEventListener("click", () => {
-      if (file && hostCompute()) void submit({ type: "track", data_path: file.url, model_paths: [card.id] });
+      if (!file || !hostCompute()) return;
+      const spec: TrackJobSpec = { type: "track", data_path: file.url, model_paths: [card.id] };
+      void submit(() => Promise.resolve(spec));
     });
     item.append(h("strong", null, card.name), h("span", "hint", ` ${facts} `), predict);
     return item;
@@ -310,13 +323,12 @@ export function mountStandIn(el: HTMLElement, options: MountOptions): SleapAppHa
   });
   trainBtn.addEventListener("click", () => {
     if (!file || !hostCompute()) return;
-    void submit({
-      type: "train",
-      config_contents: [STAND_IN_CONFIG],
-      model_types: ["single_instance"],
-      labels_path: file.url,
-      max_epochs: 3,
-      run_name: "stand-in",
+    const [project, generation, edited] = [file, opened, dirty];
+    void submit(async () => {
+      if (!edited) return { ...STAND_IN_TRAINING, labels_path: project.url };
+      // The bytes a save would send, read the way a save reads them.
+      const labels = await readProject(project, () => opened === generation);
+      return { ...STAND_IN_TRAINING, labels_content: await blobToBase64(labels) };
     });
   });
   modelsBtn.addEventListener("click", () => {

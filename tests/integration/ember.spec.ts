@@ -276,6 +276,69 @@ test.describe("EMBER storage", () => {
     expect(archive.created[0].path).toBe(target);
   });
 
+  test("keeps unsaved edits sent to training as a package beside the project, and names its asset", async ({
+    page,
+  }) => {
+    const now = new Date();
+    await page.clock.setFixedTime(now);
+    const archive = await routeArchive(page, [{ asset_id: "a1", path: "sub-01/ses-02/labels.slp", size: 64 }]);
+    await openProject(page, "sub-01/ses-02/labels.slp");
+    await role(page, "edit").click();
+    await role(page, "train").click();
+
+    const name = `sub-01_ses-02_desc-trainingset${now.toISOString().replace(/\D/g, "").slice(0, 14)}_pose.pkg.slp`;
+    const target = `derivatives/sleap/sub-01/ses-02/beh/${name}`;
+    await expect(page.locator("#host-status")).toHaveText(
+      `Saved the training labels to the draft of dandiset 000123: ${target}`,
+    );
+    expect(archive.created[0]).toEqual({ method: "POST", path: target, blob_id: "blob-u1" });
+    expect([...archive.uploads.values()][0].equals(PROJECT_BYTES)).toBe(true);
+    await expect(role(page, "job-log")).toContainText(`Input: ${name} (pkg.slp)`);
+    await expect(role(page, "job-log")).toContainText(
+      `from EMBER dandiset 000123: ${target}, asset new-1 (${API}/assets/new-1/download/)`,
+    );
+    // The package is a snapshot for this run: the project's own edits are still unsaved.
+    await expect(role(page, "dirty")).toBeVisible();
+  });
+
+  test("names a training package a second on when another run already took its name", async ({ page }) => {
+    const now = new Date("2026-11-22T15:30:00Z");
+    await page.clock.setFixedTime(now);
+    const folder = "derivatives/sleap/sub-01/ses-02/beh";
+    const archive = await routeArchive(page, [
+      { asset_id: "a1", path: "sub-01/ses-02/labels.slp", size: 64 },
+      { asset_id: "p1", path: `${folder}/sub-01_ses-02_desc-trainingset20261122153000_pose.pkg.slp`, size: 64 },
+    ]);
+    await openProject(page, "sub-01/ses-02/labels.slp");
+    await role(page, "edit").click();
+    await role(page, "train").click();
+
+    const target = `${folder}/sub-01_ses-02_desc-trainingset20261122153001_pose.pkg.slp`;
+    await expect(page.locator("#host-status")).toHaveText(
+      `Saved the training labels to the draft of dandiset 000123: ${target}`,
+    );
+    expect(archive.created[0]).toMatchObject({ method: "POST", path: target });
+  });
+
+  test("trains on what a save wrote rather than the link the project was opened under", async ({ page }) => {
+    await routeArchive(page, [{ asset_id: "a1", path: "sub-01/ses-02/labels.slp", size: 64 }]);
+    await openProject(page, "sub-01/ses-02/labels.slp");
+    await role(page, "edit").click();
+    await role(page, "save").click();
+    const target = "derivatives/sleap/sub-01/ses-02/beh/sub-01_ses-02_desc-labels_pose.slp";
+    await expect(page.locator("#host-status")).toHaveText(`Saved to the draft of dandiset 000123: ${target}`);
+
+    await role(page, "train").click();
+    const log = role(page, "job-log");
+    await expect(log).toContainText("Input: sub-01_ses-02_desc-labels_pose.slp (slp)");
+    await expect(log).toContainText(
+      `from EMBER dandiset 000123: ${target}, asset new-1 (${API}/assets/new-1/download/)`,
+    );
+    await expect(role(page, "job-state")).toHaveText("completed", { timeout: 15_000 });
+    await expect(log).toContainText(`"labels_path":"${API}/assets/new-1/download/"`);
+    await expect(log).not.toContainText("Input: labels.slp");
+  });
+
   test("finds a project's video in the dandiset by the path the project stored", async ({ page }) => {
     await routeArchive(page, [
       { asset_id: "a1", path: "sub-01/labels.slp", size: 64 },

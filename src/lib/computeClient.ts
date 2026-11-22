@@ -6,17 +6,31 @@ import type { FileType, JobEvent, JobSpec, JobState } from "./sleapContract";
  */
 export const COMPUTE_PROXY_URL: string | null = null;
 
+/**
+ * Where an input lives on EMBER. Presigned S3 links last six hours, which a queued job can outlive,
+ * so a worker renews the link from `downloadUrl` with its own credentials rather than trusting it.
+ */
+export interface ArchiveRef {
+  dandisetId: string;
+  assetId: string;
+  path: string;
+  /** The asset's stable `<api>/assets/<asset_id>/download/` endpoint. */
+  downloadUrl: string;
+}
+
 /** An input the job reads, with its type stated, since EMBER and proxy URLs carry no extension. */
 export interface JobInput {
   url: string;
   fileType: FileType;
   name: string;
+  /** The EMBER asset behind `url`, whenever this page resolved the link from one. */
+  archive?: ArchiveRef;
 }
 
 /** What this page sends to compute: the app's own job spec, plus what the spec's URLs are. */
 export interface JobRequest {
   spec: JobSpec;
-  /** Every URL the spec names (`labels_path`, `data_path`, ...), with its file type. */
+  /** Every URL the spec names (`labels_path`, `data_path`, ...), with its file type and EMBER asset. */
   inputs: JobInput[];
   /** The model card ids in a track job's `model_paths`, expanded to the files the worker fetches. */
   models: { id: string; files: { role: "config" | "checkpoint"; url: string; sha256?: string }[] }[];
@@ -35,9 +49,13 @@ export interface ComputeClient {
   cancel(jobId: string): Promise<void>;
 }
 
-/** Why a train spec is refused: this page trains only from a project saved on EMBER, never from inline labels. */
-export const TRAIN_NEEDS_SAVED_PROJECT =
-  "This page trains from a project saved on EMBER: save the project, then train.";
+/** Why a train spec naming no labels at all is refused. */
+export const TRAIN_NEEDS_LABELS =
+  "A training job needs labels: a project saved on EMBER (labels_path) or the labels to train from (labels_content).";
+
+/** Why a train spec still carrying inline labels is refused on its way to compute. */
+export const INLINE_LABELS_REFUSED =
+  "Labels sent inline (labels_content) never go to compute: they are saved to EMBER as a training package first, and that file is sent as labels_path.";
 
 /** The longest wait between event polls while the proxy keeps failing. */
 export const MAX_POLL_BACKOFF_MS = 30_000;

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { TRAIN_NEEDS_SAVED_PROJECT, type JobRequest } from "../../src/lib/computeClient";
+import { INLINE_LABELS_REFUSED, TRAIN_NEEDS_LABELS, type JobRequest } from "../../src/lib/computeClient";
 import { createStubCompute } from "../../src/lib/computeStub";
 import type { JobEvent } from "../../src/lib/sleapContract";
 
@@ -128,9 +128,14 @@ describe("createStubCompute", () => {
   });
 
   it.each([
-    ["inline labels instead of a saved project", { labels_content: "AAAA" }],
-    ["inline labels beside a saved project", { labels_path: LABELS_URL, labels_content: "AAAA" }],
-  ])("refuses a training job sent with %s, as the proxy would", async (_label, labels) => {
+    ["inline labels instead of a saved project", { labels_content: "AAAA" }, INLINE_LABELS_REFUSED],
+    [
+      "inline labels beside a saved project",
+      { labels_path: LABELS_URL, labels_content: "AAAA" },
+      INLINE_LABELS_REFUSED,
+    ],
+    ["no labels at all", { labels_content: null }, TRAIN_NEEDS_LABELS],
+  ])("refuses a training job sent with %s, as the proxy would", async (_label, labels, detail) => {
     const { stub, drain } = steppedStub();
     const request = trainRequest();
     request.spec = { type: "train", config_contents: [], model_types: [], ...labels };
@@ -139,7 +144,34 @@ describe("createStubCompute", () => {
     stub.subscribe(jobId, (e) => events.push(e));
     drain();
 
-    expect(events.map(brief)).toEqual([[1, "job.status", { state: "failed", detail: TRAIN_NEEDS_SAVED_PROJECT }]]);
+    expect(events.map(brief)).toEqual([[1, "job.status", { state: "failed", detail }]]);
+  });
+
+  it("names the EMBER asset behind each input that has one, on a line of its own", async () => {
+    const { stub, drain } = steppedStub();
+    const archive = {
+      dandisetId: "000398",
+      assetId: "a1",
+      path: "sub-NONE/train.pkg.slp",
+      downloadUrl: "https://api.test/api/assets/a1/download/",
+    };
+    const request = trainRequest(1);
+    request.inputs = [
+      { ...request.inputs[0], archive },
+      { url: VIDEO_URL, fileType: "slp", name: "val.slp" },
+    ];
+    const { jobId } = await stub.submit(request);
+    const lines: unknown[] = [];
+    stub.subscribe(jobId, (e) => {
+      if (e.topic === "job.log") lines.push(e.data.line);
+    });
+    drain();
+
+    expect(lines.slice(0, 3)).toEqual([
+      "Input: train.pkg.slp (pkg.slp)",
+      "  from EMBER dandiset 000398: sub-NONE/train.pkg.slp, asset a1 (https://api.test/api/assets/a1/download/)",
+      "Input: val.slp (slp)",
+    ]);
   });
 
   it("scripts an inference job, naming each input and model", async () => {

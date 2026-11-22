@@ -71,6 +71,28 @@ test.describe("the embedded SLEAP app", () => {
     await expect(role(page, "job-log")).toContainText("Model: ember:mock/stub-model-1");
   });
 
+  test("trains on unsaved edits offline, keeping them in memory as a training package first", async ({ page }) => {
+    const hosts = new Set<string>();
+    page.on("request", (request) => {
+      const url = new URL(request.url());
+      if (url.protocol.startsWith("http")) hosts.add(url.host);
+    });
+    const now = new Date("2026-11-22T15:30:00Z");
+    await page.clock.setFixedTime(now);
+    await openMockProject(page);
+    await role(page, "edit").click();
+    await role(page, "train").click();
+
+    const name = "sub-mock_desc-trainingsetTestInjectionMockProject20261122153000_pose.pkg.slp";
+    await expect(page.locator("#host-status")).toHaveText(
+      `Saved in memory (test injection): derivatives/sleap/sub-mock/beh/${name}`,
+    );
+    await expect(role(page, "job-state")).toHaveText("completed");
+    await expect(role(page, "job-log")).toContainText(`Input: ${name} (pkg.slp)`);
+    await expect(role(page, "dirty")).toBeVisible();
+    expect([...hosts]).toEqual([new URL(page.url()).host]);
+  });
+
   test("cancels a running job", async ({ page }) => {
     await openMockProject(page);
     await role(page, "train").click();

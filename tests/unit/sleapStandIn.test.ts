@@ -520,6 +520,93 @@ describe("mountStandIn", () => {
       expect(unsubscribe).toHaveBeenCalled();
     });
 
+    it("trains on unsaved edits by sending them inline, as the bytes a save would send", async () => {
+      const { host } = computeHost();
+      const app = mount({ compute: { builtIn: false }, host });
+      await app.open({ ...FILE, ref: REF });
+      q(container, "edit").click();
+      q(container, "train").click();
+      await vi.waitFor(() => expect(host.submitJob).toHaveBeenCalled());
+      const [spec, ref] = host.submitJob.mock.calls[0];
+      expect(spec).toEqual({
+        type: "train",
+        config_contents: [expect.stringContaining("single_instance")],
+        model_types: ["single_instance"],
+        labels_content: btoa(String.fromCharCode(...HDF5)),
+        max_epochs: 3,
+        run_name: "stand-in",
+      });
+      expect(ref).toBe(REF);
+      expect(app.isDirty()).toBe(true);
+    });
+
+    it("renews an expired link once to read the edits it trains on, and keeps the fresh one", async () => {
+      const { host } = computeHost();
+      const refreshUrl = vi.fn<NonNullable<SleapHost["refreshUrl"]>>((file) =>
+        Promise.resolve({ ...file, url: FRESH_URL }),
+      );
+      const app = mount({ host: { ...host, refreshUrl } });
+      await app.open({ ...FILE, ref: REF });
+      serve({ [FILE.url]: expired, [FRESH_URL]: () => bytesResponse([1, 2, 3], 200) });
+      q(container, "edit").click();
+      q(container, "train").click();
+      await vi.waitFor(() => expect(host.submitJob).toHaveBeenCalledTimes(1));
+      expect(host.submitJob.mock.calls[0][0]).toMatchObject({ labels_content: btoa("\x01\x02\x03") });
+
+      q(container, "list-models").click();
+      await vi.waitFor(() => expect(container.querySelectorAll('[data-role="predict"]').length).toBe(1));
+      q(container, "predict").click();
+      await vi.waitFor(() => expect(host.submitJob).toHaveBeenCalledTimes(2));
+      expect(host.submitJob.mock.calls[1][0]).toMatchObject({ data_path: FRESH_URL });
+      expect(refreshUrl).toHaveBeenCalledTimes(1);
+    });
+
+    it("says why it cannot train on edits it cannot read, and submits nothing", async () => {
+      const { host } = computeHost();
+      const app = mount({ host });
+      await app.open({ ...FILE, ref: REF });
+      serve({ [FILE.url]: () => new Response("<Error/>", { status: 500 }) });
+      q(container, "edit").click();
+      q(container, "train").click();
+      await vi.waitFor(() =>
+        expect(q(container, "compute-status").textContent).toBe(
+          "Could not submit: Could not read the project (HTTP 500).",
+        ),
+      );
+      expect(host.submitJob).not.toHaveBeenCalled();
+    });
+
+    it("says to save first when its edits are too large to send inline, and submits nothing", async () => {
+      const { host } = computeHost();
+      const app = mount({ host });
+      await app.open({ ...FILE, ref: REF });
+      // What Chromium's btoa gives once the base64 would be longer than its longest string.
+      vi.stubGlobal("btoa", () => "");
+      q(container, "edit").click();
+      q(container, "train").click();
+      await vi.waitFor(() =>
+        expect(q(container, "compute-status").textContent).toBe(
+          "Could not submit: These labels are too large to send inline (12 B): save the project, then train.",
+        ),
+      );
+      expect(host.submitJob).not.toHaveBeenCalled();
+    });
+
+    it("trains on the saved project by its link once its edits are saved", async () => {
+      const { host } = computeHost();
+      const save = vi.fn<NonNullable<SleapHost["save"]>>(() => Promise.resolve(SAVED));
+      const app = mount({ host: { ...host, save } });
+      await app.open({ ...FILE, ref: REF });
+      q(container, "edit").click();
+      q(container, "save").click();
+      await vi.waitFor(() => expect(app.isDirty()).toBe(false));
+      q(container, "train").click();
+      await vi.waitFor(() => expect(host.submitJob).toHaveBeenCalled());
+      expect(host.submitJob.mock.calls[0][0]).toMatchObject({ labels_path: FILE.url });
+      expect(host.submitJob.mock.calls[0][0]).not.toHaveProperty("labels_content");
+      expect(host.submitJob.mock.calls[0][1]).toBe(SAVED);
+    });
+
     it("shows a failure's detail, and a canceled job's, with Cancel gone", async () => {
       const { host, emit } = computeHost();
       const app = mount({ host });
