@@ -28,6 +28,7 @@ function setup(overrides: Partial<EmberStorageOptions> = {}) {
   const options = {
     config: vi.fn((id: string) => Promise.resolve(cfgFor(id))),
     askEntities: vi.fn(() => Promise.resolve(null)),
+    confirmOverwrite: vi.fn(() => Promise.resolve(true)),
     versions: () => ({ app: "0.1.0", sleap: "0.0.0-stand-in" }),
     onProgress: vi.fn(),
     onWarning: vi.fn(),
@@ -39,13 +40,21 @@ function setup(overrides: Partial<EmberStorageOptions> = {}) {
 
 const ref = (path: string, dandisetId = "000398") => toHostRef({ dandisetId, path });
 const file = new Blob(["labels"]);
+/** The draft's asset paths: the derivative dataset's files to begin with, then whatever is put. */
+let draft: Set<string>;
 
 beforeEach(() => {
   for (const mock of [findByPath, findByName, resolveUrl, put]) mock.mockReset();
   let n = 0;
   resolveUrl.mockImplementation((_, assetId) => Promise.resolve(`https://s3.test/${assetId}?sig=${++n}`));
-  findByPath.mockResolvedValue({ asset_id: "present", path: "x", size: 1 });
-  put.mockImplementation((_, path) => Promise.resolve({ asset_id: "put", path }));
+  draft = new Set([DATASET_DESCRIPTION_PATH, BIDSIGNORE_PATH]);
+  findByPath.mockImplementation((_, path) =>
+    Promise.resolve(draft.has(path) ? { asset_id: "present", path, size: 1 } : null),
+  );
+  put.mockImplementation((_, path) => {
+    draft.add(path);
+    return Promise.resolve({ asset_id: "put", path });
+  });
 });
 
 afterEach(() => {
@@ -91,20 +100,72 @@ describe("save", () => {
     expect(put).not.toHaveBeenCalled();
   });
 
-  it("saves a project already in derivatives/sleap/ back over itself, without asking", async () => {
-    const source = "derivatives/sleap/sub-01/beh/sub-01_desc-labels_pose.slp";
+  it("saves a labels file already in derivatives/sleap/ back over itself, without asking", async () => {
+    const source = "derivatives/sleap/sub-01/beh/sub-01_desc-labelsCamTop_pose.slp";
+    draft.add(source);
     const { options, storage } = setup({ saveRefusal: () => null });
     expect(await storage.save(file, "renamed.slp", ref(source))).toEqual(ref(source));
     expect(put).toHaveBeenCalledWith(cfgFor("000398"), source, file, options.onProgress);
     expect(options.askEntities).not.toHaveBeenCalled();
+    expect(options.confirmOverwrite).not.toHaveBeenCalled();
+    expect(findByPath.mock.calls.map((c) => c[1])).toEqual([DATASET_DESCRIPTION_PATH, BIDSIGNORE_PATH]);
   });
 
   it("places a source's labels by the subject and session its path names", async () => {
     const { options, storage } = setup();
-    const target = "derivatives/sleap/sub-01/ses-02/beh/sub-01_ses-02_desc-labels_pose.pkg.slp";
+    const target = "derivatives/sleap/sub-01/ses-02/beh/sub-01_ses-02_desc-labelsTrain_pose.pkg.slp";
     expect(await storage.save(file, "train.pkg.slp", ref("sub-01/ses-02/train.pkg.slp"))).toEqual(ref(target));
     expect(put.mock.calls[0][1]).toBe(target);
     expect(options.askEntities).not.toHaveBeenCalled();
+    expect(options.confirmOverwrite).not.toHaveBeenCalled();
+  });
+
+  it("saves two projects of one session to two labels files, neither over the other", async () => {
+    const { options, storage } = setup();
+    await storage.save(file, "cam-top.slp", ref("sub-01/ses-01/beh/cam-top.slp"));
+    await storage.save(file, "cam-side.slp", ref("sub-01/ses-01/beh/cam-side.slp"));
+    expect(put.mock.calls.map((c) => c[1])).toEqual([
+      "derivatives/sleap/sub-01/ses-01/beh/sub-01_ses-01_desc-labelsCamTop_pose.slp",
+      "derivatives/sleap/sub-01/ses-01/beh/sub-01_ses-01_desc-labelsCamSide_pose.slp",
+    ]);
+    expect(options.confirmOverwrite).not.toHaveBeenCalled();
+  });
+
+  it("saves a proofread predictions file beside it as labels, leaving the predictions alone", async () => {
+    const source = "derivatives/sleap/sub-01/beh/sub-01_desc-predictions_pose.slp";
+    draft.add(source);
+    const { options, storage } = setup();
+    const target = "derivatives/sleap/sub-01/beh/sub-01_desc-labels_pose.slp";
+    expect(await storage.save(file, "predictions.slp", ref(source))).toEqual(ref(target));
+    expect(put.mock.calls.map((c) => c[1])).toEqual([target]);
+    expect(options.askEntities).not.toHaveBeenCalled();
+  });
+
+  it("asks before replacing labels already at the target, and replaces them when told to", async () => {
+    const target = "derivatives/sleap/sub-01/beh/sub-01_desc-labels_pose.slp";
+    draft.add(target);
+    const { options, storage } = setup();
+    expect(await storage.save(file, "labels.slp", ref("sub-01/labels.slp"))).toEqual(ref(target));
+    expect(options.confirmOverwrite).toHaveBeenCalledWith(target);
+    expect(put.mock.calls.map((c) => c[1])).toEqual([target]);
+  });
+
+  it("cancels, sending nothing, when the person keeps the labels already at the target", async () => {
+    const target = "derivatives/sleap/sub-01/beh/sub-01_desc-labels_pose.slp";
+    draft.add(target);
+    const { storage } = setup({ confirmOverwrite: () => Promise.resolve(false) });
+    await expect(storage.save(file, "labels.slp", ref("sub-01/labels.slp"))).rejects.toThrow(
+      `Save cancelled: ${target} already holds other labels.`,
+    );
+    expect(put).not.toHaveBeenCalled();
+  });
+
+  it("stops before uploading when it cannot tell whether the target is taken", async () => {
+    findByPath.mockRejectedValue(new Error("listing failed"));
+    const { options, storage } = setup();
+    await expect(storage.save(file, "labels.slp", ref("sub-01/labels.slp"))).rejects.toThrow("listing failed");
+    expect(options.confirmOverwrite).not.toHaveBeenCalled();
+    expect(put).not.toHaveBeenCalled();
   });
 
   it("asks for a subject when the source path names none", async () => {
@@ -116,6 +177,15 @@ describe("save", () => {
     expect(askEntities).toHaveBeenCalledWith("labels/labels.slp");
   });
 
+  it("asks rather than dropping a session the source path names but cannot be read", async () => {
+    const askEntities = vi.fn(() => Promise.resolve({ sub: "01", ses: "day1" }));
+    const { storage } = setup({ askEntities });
+    expect(await storage.save(file, "labels.slp", ref("sub-01/ses-day-1/labels.slp"))).toEqual(
+      ref("derivatives/sleap/sub-01/ses-day1/beh/sub-01_ses-day1_desc-labels_pose.slp"),
+    );
+    expect(askEntities).toHaveBeenCalledWith("sub-01/ses-day-1/labels.slp");
+  });
+
   it("cancels when the person gives no subject", async () => {
     const { storage } = setup();
     await expect(storage.save(file, "labels.slp", ref("labels/labels.slp"))).rejects.toThrow("Save cancelled");
@@ -125,7 +195,11 @@ describe("save", () => {
   it("leaves the derivative dataset's files alone when they are already there", async () => {
     const { storage } = setup();
     await storage.save(file, "x.slp", ref("sub-01/x.slp"));
-    expect(findByPath.mock.calls.map((c) => c[1])).toEqual([DATASET_DESCRIPTION_PATH, BIDSIGNORE_PATH]);
+    expect(findByPath.mock.calls.map((c) => c[1])).toEqual([
+      "derivatives/sleap/sub-01/beh/sub-01_desc-labelsX_pose.slp",
+      DATASET_DESCRIPTION_PATH,
+      BIDSIGNORE_PATH,
+    ]);
     expect(put).toHaveBeenCalledTimes(1);
   });
 
@@ -134,7 +208,7 @@ describe("save", () => {
     const { storage } = setup({ versions: () => ({ app: "9.9.9", sleap: "1.2.3" }) });
     await storage.save(file, "x.slp", ref("sub-01/x.slp"));
     expect(put.mock.calls.map((c) => c[1])).toEqual([
-      "derivatives/sleap/sub-01/beh/sub-01_desc-labels_pose.slp",
+      "derivatives/sleap/sub-01/beh/sub-01_desc-labelsX_pose.slp",
       DATASET_DESCRIPTION_PATH,
       BIDSIGNORE_PATH,
     ]);
@@ -156,11 +230,14 @@ describe("save", () => {
   });
 
   it("only warns when the derivative dataset's files cannot be written; the save stands", async () => {
-    findByPath.mockRejectedValueOnce(new Error("listing failed")).mockResolvedValueOnce(null);
+    findByPath
+      .mockResolvedValueOnce(null)
+      .mockRejectedValueOnce(new Error("listing failed"))
+      .mockResolvedValueOnce(null);
     put.mockResolvedValueOnce({ asset_id: "labels", path: "x" }).mockRejectedValueOnce("S3 said no");
     const { options, storage } = setup();
     expect(await storage.save(file, "x.slp", ref("sub-01/x.slp"))).toEqual(
-      ref("derivatives/sleap/sub-01/beh/sub-01_desc-labels_pose.slp"),
+      ref("derivatives/sleap/sub-01/beh/sub-01_desc-labelsX_pose.slp"),
     );
     expect(options.onWarning.mock.calls).toEqual([
       [`Saved, but could not write ${DATASET_DESCRIPTION_PATH}: listing failed`],
@@ -169,7 +246,7 @@ describe("save", () => {
   });
 
   it("warns on the console when no warning callback is given", async () => {
-    findByPath.mockRejectedValue(new Error("listing failed"));
+    findByPath.mockResolvedValueOnce(null).mockRejectedValue(new Error("listing failed"));
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const { storage } = setup({ onWarning: undefined });
     await storage.save(file, "x.slp", ref("sub-01/x.slp"));
@@ -206,6 +283,18 @@ describe("resolveVideo", () => {
       fileType: "avi",
       name: "session1.avi",
     });
+  });
+
+  it("resolves a saved project's video by the source tree its labels file mirrors", async () => {
+    findByName.mockResolvedValue([
+      { asset_id: "other", path: "sub-01/session1.mp4", size: 1 },
+      { asset_id: "own", path: "sub-02/session1.mp4", size: 1 },
+    ]);
+    const { storage } = setup();
+    const saved = ref("derivatives/sleap/sub-02/beh/sub-02_desc-labelsCamTop_pose.slp");
+    expect((await storage.resolveVideo("D:\\videos\\mouse2\\session1.mp4", saved))?.url).toBe(
+      "https://s3.test/own?sig=1",
+    );
   });
 });
 

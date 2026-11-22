@@ -1,4 +1,4 @@
-import type { ComputeClient, JobInput, JobRequest } from "./computeClient";
+import { TRAIN_NEEDS_SAVED_PROJECT, type ComputeClient, type JobInput, type JobRequest } from "./computeClient";
 import type { ProjectStorage } from "./emberStorage";
 import { fromHostRef } from "./hostRef";
 import { listModels, type ModelSource } from "./modelCatalogue";
@@ -21,7 +21,9 @@ export interface PageHost extends Required<SleapHost> {
  * The job request for one of the app's specs: every URL it names paired with the type this page
  * knows it to be, and every model id expanded to the files a worker downloads. A URL this page did
  * not hand out has no known type, and a worker cannot guess one from an extensionless link, so the
- * job is refused here rather than failing on the worker.
+ * job is refused here rather than failing on the worker. So is training from inline labels: the
+ * proxy is promised a saved project's `labels_path` and never a `labels_content` upload, and this is
+ * the one place every compute client's requests pass through.
  */
 export function buildJobRequest(
   spec: JobSpec,
@@ -29,6 +31,9 @@ export function buildJobRequest(
   files: ReadonlyMap<string, ResolvedFile>,
   cards: ReadonlyMap<string, ModelCard>,
 ): JobRequest {
+  if (spec.type === "train" && (!spec.labels_path || spec.labels_content)) {
+    throw new Error(TRAIN_NEEDS_SAVED_PROJECT);
+  }
   const urls = spec.type === "train" ? [spec.labels_path, spec.val_labels_path] : [spec.data_path];
   const inputs = urls.flatMap((url): JobInput[] => {
     if (!url) return [];

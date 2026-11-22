@@ -21,6 +21,7 @@ Until this API exists, the page runs against an in-browser stub (`src/lib/comput
 
 - Every request carries the signed-in user's EMBER access token as `Authorization: Bearer <token>`, the same token the page already uses against the EMBER API.
   The proxy checks it against EMBER, so a user signs in once.
+- This is the one exception [SECURITY.md](../SECURITY.md#the-compute-proxy-exception) makes to never forwarding a user's token: the proxy may use it only to identify the user and check their access on EMBER, and must not store it or read or write EMBER with it.
 - The proxy records that user as the requester of each job, and refuses a job whose inputs or destination dandiset the user cannot read or write on EMBER.
 - CORS must allow the page's origins: `https://brain-bbqs.github.io` and any `https://*.brain-bbqs.org` (production is planned as `https://sleap.brain-bbqs.org`; PR previews are served under the same host).
   Allowed methods `GET` and `POST`; allowed request headers `Authorization` and `Content-Type`.
@@ -40,6 +41,9 @@ All paths are relative to one base URL the page is configured with, for example 
   The page polls it every 2 seconds and stops after a terminal `job.status` event.
   A server-sent-events or WebSocket variant can come later with the same event objects.
 - Any non-2xx status is an error; a JSON body `{ "detail": "…" }` with a human-readable reason is welcome on `4xx`.
+- A failed poll (a network error, `401` while the user is signed out, `5xx`) is retried, waiting twice as long after each failure up to 30 seconds, and back to every 2 seconds after the next success.
+- `404` or `410` from `events` means the proxy has no record of the job.
+  The page then ends the job in its viewer as `failed` ("The compute proxy no longer knows this job") and stops polling, so answer `404` only for a job id the proxy never issued or has forgotten, never for one that is still running.
 - Cancelling a job that has already ended should succeed and change nothing.
 
 ## Job request
@@ -111,7 +115,7 @@ An inference job:
 
 - **File types are declared, never guessed.** EMBER download links and S3 blob URLs have no file extension, and sleap-nn picks `.slp` versus video handling from the extension of `--data_path`.
   The proxy (or the container) must use `fileType`, for example by downloading to a local file named with the right extension before calling sleap-nn.
-- **Training from saved projects only.** A train spec sent by this page always has `labels_path` pointing at a `.pkg.slp` (or `.slp`) saved on EMBER; it never carries `labels_content` inline.
+- **Training from saved projects only.** A train spec sent by this page always has `labels_path` pointing at a `.pkg.slp` (or `.slp`) saved on EMBER, and its `labels_content` is absent, `null` or empty: the page refuses any other train spec before it reaches a compute client.
 - Presigned S3 links expire after 6 hours, which a queued job can outlive.
   The page may also send the stable EMBER API download URL (`https://api-dandi.emberarchive.org/api/assets/{asset_id}/download/`) for the same asset; the proxy should prefer re-resolving through the API with the service account over trusting an expired link.
 
@@ -132,8 +136,11 @@ Each event has the same shape sleap-app's job viewer already consumes from SLEAP
 | `job.epoch`  | `{ "epoch": 0, "train_loss": 0.012, "val_loss": 0.015 }` (0-based epoch)                                                      |
 | `job.curve`  | `{ "points": [{ "x": <global batch>, "y": <loss> }, …] }`, the whole downsampled curve each time                              |
 | `job.metric` | `{ "epoch", "total_epochs", "latest_train_loss", "latest_val_loss", "best_loss", "wandb_url"?, "eta_seconds"? }`              |
-| `job.result` | Train: `{ "model_id", "model_dir" }`. Track: `{ "predictions": ["<EMBER path>", …] }`. Paths are relative to the dandiset.    |
+| `job.result` | Train: `{ "model_id", "model_dir", "model_path", "labels_path" }`. Track: `{ "predictions": ["<path>", …] }`. See below.      |
 
+- A train result's `model_dir` is the trained model's card id, `ember:<dandisetId>/<model_id>` (the id the page's EMBER model source gives the folder), so sleap-app can name it in a follow-up track job's `model_paths`.
+  `model_path` is the same folder relative to the dandiset (`derivatives/sleap/models/<model_id>/`), and `labels_path` echoes the spec's `labels_path`, which sleap-app uses as that track job's `data_path`.
+- A track result's `predictions` are paths relative to the dandiset, in the layout under [Inputs, models and results](#inputs-models-and-results).
 - `completed`, `failed` and `canceled` are terminal: exactly one of them is the last `job.status` of a job, and nothing follows it.
 - `job.epoch`, `job.curve` and `job.metric` are optional; without them the viewer shows status and logs only.
   sleap-nn's training loop already reports per-epoch losses, so forwarding them is cheap.
@@ -148,7 +155,7 @@ Each event has the same shape sleap-app's job viewer already consumes from SLEAP
   - `ember://<dandiset>/<path>`: an EMBER asset named by dandiset and path rather than id, for entries in the central model index; the proxy resolves it through the EMBER API.
 - **Results go back to EMBER** in the source dandiset's draft, under `derivatives/sleap/`, written by the service account:
   - trained models under `derivatives/sleap/models/<model-id>/` (`training_config.yaml`, `best.ckpt`, and a `model_card.json`);
-  - predictions as `derivatives/sleap/sub-<label>/[ses-<label>/]beh/sub-<label>[_ses-<label>]_desc-predictions_pose.slp`, derived from the input's path.
+  - predictions as `derivatives/sleap/sub-<label>/[ses-<label>/]beh/sub-<label>[_ses-<label>]_desc-predictions_pose.slp`, with the subject and session read from `project.path` or, failing that, from the input's name; a job where neither names a subject fails rather than inventing a folder.
   - Each result records the requesting EMBER user and the job id in its provenance (for example in the asset metadata's `wasGeneratedBy`).
   - The page never publishes a dandiset; results stay in the draft until the owner publishes.
 

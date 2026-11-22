@@ -6,6 +6,7 @@ import {
   type ArchiveConfig,
   type DandisetListItem,
 } from "@brain-bbqs/ember-client";
+import { DERIVATIVES_ROOT, entitiesFromPath, isDerivativePath } from "./bidsDerivatives";
 import { baseName, fileTypeOfPath, isProjectType } from "./fileType";
 import type { FileType } from "./sleapContract";
 
@@ -92,23 +93,40 @@ function folderSegments(path: string): string[] {
   return path.split("/").slice(0, -1);
 }
 
+/** Whether any segment of `path` carries the entity `key-label`, as a folder or in a file name. */
+function namesEntity(path: string, key: "sub" | "ses", label: string): boolean {
+  const entity = new RegExp(`(?:^|_)${key}-${label}(?=_|\\.|$)`);
+  return path.split("/").some((segment) => entity.test(segment));
+}
+
 /**
- * Of several assets sharing a video's file name, the one a project most likely meant: one whose
- * path the stored path ends with (the project kept the layout it was labeled in), else the one
- * sharing the most leading folders with the project itself. Ties keep listing order.
+ * Of several assets sharing a video's file name, the one a project most likely meant: the longest
+ * path the stored path ends with (the project kept the layout it was labeled in), else the one of
+ * the project's own subject and session, then the one sharing the most leading folders with it.
+ * A project in `derivatives/sleap/` is compared as the source tree it mirrors, since raw videos
+ * never sit under it. Ties keep listing order.
  */
 export function closestAsset<T extends { path: string }>(candidates: T[], projectPath: string, storedPath: string): T {
   const stored = storedPath.replace(/\\/g, "/");
-  const suffixHit = candidates.find((c) => stored === c.path || stored.endsWith(`/${c.path}`));
-  if (suffixHit) return suffixHit;
-  const project = folderSegments(projectPath);
+  const suffixHits = candidates.filter((c) => stored === c.path || stored.endsWith(`/${c.path}`));
+  if (suffixHits.length > 0) {
+    return suffixHits.reduce((best, c) => (c.path.length > best.path.length ? c : best));
+  }
+  const mirrored = isDerivativePath(projectPath) ? projectPath.slice(DERIVATIVES_ROOT.length + 1) : projectPath;
+  const project = folderSegments(mirrored);
+  const entities = entitiesFromPath(mirrored);
+  const kin = (c: T) => {
+    if (!entities || !namesEntity(c.path, "sub", entities.sub)) return 0;
+    return entities.ses && namesEntity(c.path, "ses", entities.ses) ? 2 : 1;
+  };
   const shared = (c: T) => {
     const folders = folderSegments(c.path);
     let n = 0;
     while (n < folders.length && n < project.length && folders[n] === project[n]) n++;
     return n;
   };
-  return candidates.reduce((best, c) => (shared(c) > shared(best) ? c : best));
+  const closer = (a: T, b: T) => kin(a) - kin(b) || shared(a) - shared(b);
+  return candidates.reduce((best, c) => (closer(c, best) > 0 ? c : best));
 }
 
 export function downloadUrl(cfg: ArchiveConfig, assetId: string): string {

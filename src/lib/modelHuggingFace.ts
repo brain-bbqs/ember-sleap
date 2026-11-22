@@ -8,7 +8,10 @@ export interface HuggingFaceSourceOptions {
   fetch?: typeof fetch;
   hubUrl?: string;
   tag?: string;
+  /** Models per page of the Hub's listing. */
   limit?: number;
+  /** How many pages to follow through the Hub's `Link: rel="next"` headers. */
+  maxPages?: number;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -68,24 +71,51 @@ export function mapHubModel(model: unknown, hubUrl: string): ModelCard | null {
   };
 }
 
+const LINK_TARGET = /<([^>]*)>([^<]*)/g;
+const REL_NEXT = /;\s*rel\s*=\s*"?next"?\s*(?:[;,]|$)/i;
+
+/** The `rel="next"` target of a `Link` header, followed only while it stays on the Hub. */
+export function nextPageUrl(link: string | null, hubUrl: string): string | null {
+  for (const [, target, params] of (link ?? "").matchAll(LINK_TARGET)) {
+    if (!REL_NEXT.test(params)) continue;
+    try {
+      const next = new URL(target, hubUrl);
+      return next.origin === new URL(hubUrl).origin ? next.href : null;
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
 export function createHuggingFaceSource({
   fetch: fetchImpl = (input, init) => fetch(input, init),
   hubUrl = "https://huggingface.co",
   tag = "sleap-nn",
   limit = 50,
+  maxPages = 4,
 }: HuggingFaceSourceOptions = {}): ModelSource {
   const hub = hubUrl.replace(/\/+$/, "");
   return {
     name: "Hugging Face",
-    async list(query, signal) {
+    // Listed by tag alone: the Hub's own `search` matches repo ids only, so a species search would
+    // drop models whose card names it. listModels filters the text over id, name and species.
+    async list(_query, signal) {
       const params = new URLSearchParams({ filter: tag, full: "true", cardData: "true", limit: String(limit) });
-      const text = query.text?.trim();
-      if (text) params.set("search", text);
-      const response = await fetchImpl(`${hub}/api/models?${params.toString()}`, { signal });
-      if (!response.ok) throw new Error(`Hugging Face returned HTTP ${response.status}.`);
-      const listing: unknown = await response.json();
-      if (!Array.isArray(listing)) throw new Error("Hugging Face returned something other than a model list.");
-      return listing.map((model) => mapHubModel(model, hub)).filter((card): card is ModelCard => card !== null);
+      let url: string | null = `${hub}/api/models?${params.toString()}`;
+      const cards: ModelCard[] = [];
+      for (let page = 0; url && page < maxPages; page++) {
+        const response = await fetchImpl(url, { signal });
+        if (!response.ok) throw new Error(`Hugging Face returned HTTP ${response.status}.`);
+        const listing: unknown = await response.json();
+        if (!Array.isArray(listing)) throw new Error("Hugging Face returned something other than a model list.");
+        for (const model of listing) {
+          const card = mapHubModel(model, hub);
+          if (card) cards.push(card);
+        }
+        url = nextPageUrl(response.headers.get("Link"), hub);
+      }
+      return cards;
     },
   };
 }

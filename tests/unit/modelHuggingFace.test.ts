@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import { createHuggingFaceSource, mapHubModel } from "../../src/lib/modelHuggingFace";
+import { listModels } from "../../src/lib/modelCatalogue";
+import { createHuggingFaceSource, mapHubModel, nextPageUrl } from "../../src/lib/modelHuggingFace";
 
 const HUB = "https://hub.example";
 
@@ -88,30 +89,77 @@ describe("mapHubModel", () => {
   });
 });
 
+describe("nextPageUrl", () => {
+  it.each([
+    ["no header", null, null],
+    ["no next link", '<https://hub.example/api/models?cursor=a>; rel="prev"', null],
+    [
+      "a next link among others",
+      '<https://hub.example/api/models?cursor=a>; rel="prev", <https://hub.example/api/models?cursor=b>; rel="next"',
+      "https://hub.example/api/models?cursor=b",
+    ],
+    ["an unquoted rel with more parameters", "</api/models?cursor=c>; rel=next; title=x", `${HUB}/api/models?cursor=c`],
+    ["a rel that only starts with next", '<https://hub.example/x>; rel="nextish"', null],
+    ["a next link to another host", '<https://evil.example/api/models?cursor=d>; rel="next"', null],
+    ["a next link that is not a URL", '<https://[>; rel="next"', null],
+  ])("reads %s", (_label, header, expected) => {
+    expect(nextPageUrl(header, HUB)).toBe(expected);
+  });
+});
+
 describe("createHuggingFaceSource", () => {
   function respond(status: number, body: unknown) {
     return vi.fn<typeof fetch>(() => Promise.resolve(new Response(JSON.stringify(body), { status })));
   }
 
-  it("asks the Hub for models carrying the tag, with card data, and maps them", async () => {
+  /** One Hub page per call, each linking to the next until the last. */
+  function pages(...listings: unknown[][]) {
+    return vi.fn<typeof fetch>((input) => {
+      const cursor = Number(new URL(String(input)).searchParams.get("cursor") ?? 0);
+      const more = cursor + 1 < listings.length;
+      const headers = more ? { Link: `<${HUB}/api/models?cursor=${cursor + 1}>; rel="next"` } : undefined;
+      return Promise.resolve(new Response(JSON.stringify(listings[cursor]), { status: 200, headers }));
+    });
+  }
+
+  it("asks the Hub for every model carrying the tag, with card data, and maps them, whatever the text", async () => {
     const fetch = respond(200, [hubModel(), hubModel({ id: "lab/no-config", siblings: [] })]);
     const signal = new AbortController().signal;
     const source = createHuggingFaceSource({ fetch, hubUrl: `${HUB}/`, tag: "sleap-nn", limit: 10 });
     expect(source.name).toBe("Hugging Face");
-    const models = await source.list({ text: "  mouse " }, signal);
+    const models = await source.list({ text: "  musculus " }, signal);
     expect(models.map((m) => m.id)).toEqual(["hf:talmolab/mouse-topdown"]);
-    expect(fetch).toHaveBeenCalledWith(
-      `${HUB}/api/models?filter=sleap-nn&full=true&cardData=true&limit=10&search=mouse`,
-      { signal },
-    );
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(fetch).toHaveBeenCalledWith(`${HUB}/api/models?filter=sleap-nn&full=true&cardData=true&limit=10`, {
+      signal,
+    });
   });
 
-  it("leaves out the search when there is no text", async () => {
-    const fetch = respond(200, []);
-    await createHuggingFaceSource({ fetch }).list({ text: " " });
-    expect(fetch.mock.calls[0][0]).toBe(
-      "https://huggingface.co/api/models?filter=sleap-nn&full=true&cardData=true&limit=50",
-    );
+  it("lets the picker's text find a model by the species on its card, not only by its id", async () => {
+    const fetch = respond(200, [hubModel({ id: "talmolab/topdown-v1" }), hubModel({ id: "lab/fly", cardData: {} })]);
+    const models = await listModels([createHuggingFaceSource({ fetch, hubUrl: HUB })], { text: "Mus musculus" });
+    expect(models.map((m) => m.id)).toEqual(["hf:talmolab/topdown-v1"]);
+  });
+
+  it("follows the Hub's next links, so tagged models past the first page are listed", async () => {
+    const fetch = pages([hubModel({ id: "lab/a" })], [hubModel({ id: "lab/b" })], [hubModel({ id: "lab/c" })]);
+    const models = await createHuggingFaceSource({ fetch, hubUrl: HUB }).list({});
+    expect(models.map((m) => m.id)).toEqual(["hf:lab/a", "hf:lab/b", "hf:lab/c"]);
+    expect(fetch.mock.calls.map(([url]) => url)).toEqual([
+      `${HUB}/api/models?filter=sleap-nn&full=true&cardData=true&limit=50`,
+      `${HUB}/api/models?cursor=1`,
+      `${HUB}/api/models?cursor=2`,
+    ]);
+  });
+
+  it.each([
+    [2, 2],
+    [undefined, 4],
+  ])("stops after maxPages (%s), however many the Hub offers", async (maxPages, fetched) => {
+    const fetch = pages(...[0, 1, 2, 3, 4, 5].map((i) => [hubModel({ id: `lab/m${i}` })]));
+    const models = await createHuggingFaceSource({ fetch, hubUrl: HUB, maxPages }).list({});
+    expect(models.length).toBe(fetched);
+    expect(fetch).toHaveBeenCalledTimes(fetched);
   });
 
   it("throws on an HTTP error", async () => {

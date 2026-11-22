@@ -178,6 +178,66 @@ describe("closestAsset", () => {
   ])("picks the one where %s", (_, stored, project, index) => {
     expect(closestAsset(candidates, project, stored)).toBe(candidates[index]);
   });
+
+  it.each([
+    [
+      "the stored path ends with the longest of several candidates",
+      ["sub-02/session1.mp4", "session1.mp4", "beh/session1.mp4", "lab/sub-02/session1.mp4"],
+      "labels.slp",
+      "/lab/sub-02/session1.mp4",
+      "lab/sub-02/session1.mp4",
+    ],
+    [
+      "it holds the project's folders, however deep it sits",
+      ["other/session1.mp4", "lab/videos/session1.mp4"],
+      "lab/labels.slp",
+      "/elsewhere/session1.mp4",
+      "lab/videos/session1.mp4",
+    ],
+    [
+      "a saved project mirrors its source's subject folder",
+      ["sub-01/session1.mp4", "sub-02/session1.mp4"],
+      "derivatives/sleap/sub-02/beh/sub-02_desc-labels_pose.slp",
+      "D:\\videos\\mouse2\\session1.mp4",
+      "sub-02/session1.mp4",
+    ],
+    [
+      "a saved project mirrors its source's subject and session folders",
+      ["sub-01/ses-01/beh/session1.mp4", "sub-02/ses-01/beh/session1.mp4"],
+      "derivatives/sleap/sub-02/ses-01/beh/sub-02_ses-01_desc-labels_pose.slp",
+      "/lab/session1.mp4",
+      "sub-02/ses-01/beh/session1.mp4",
+    ],
+    [
+      "it names the project's subject, below other folders",
+      ["rawdata/sub-01/session1.mp4", "rawdata/sub-02/session1.mp4"],
+      "derivatives/sleap/sub-02/beh/sub-02_desc-labels_pose.slp",
+      "/lab/session1.mp4",
+      "rawdata/sub-02/session1.mp4",
+    ],
+    [
+      "it names the project's session, even with fewer folders in common",
+      ["sub-02/ses-01/session1.mp4", "videos/sub-02_ses-02/session1.mp4"],
+      "sub-02/ses-02/labels.slp",
+      "/lab/session1.mp4",
+      "videos/sub-02_ses-02/session1.mp4",
+    ],
+    [
+      "its session matches only within the project's subject",
+      ["sub-01/ses-02/session1.mp4", "sub-02/ses-09/session1.mp4"],
+      "derivatives/sleap/sub-02/ses-02/beh/sub-02_ses-02_desc-labels_pose.slp",
+      "/lab/session1.mp4",
+      "sub-02/ses-09/session1.mp4",
+    ],
+  ])("picks the one where %s", (_, paths, project, stored, expected) => {
+    expect(
+      closestAsset(
+        paths.map((path) => ({ path })),
+        project,
+        stored,
+      ).path,
+    ).toBe(expected);
+  });
 });
 
 describe("downloadUrl / resolveDownloadUrl", () => {

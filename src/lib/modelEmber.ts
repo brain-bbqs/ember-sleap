@@ -14,8 +14,8 @@ const FILE_ROLES = new Map<string, ModelFile["role"]>([
 ]);
 
 export interface EmberModelSourceOptions {
-  /** The open dandiset's archive config, or null when nothing is open. */
-  getConfig: () => ArchiveConfig | null;
+  /** The open dandiset's config with a token fresh for this listing; null, or no dandisetId, when nothing is open. */
+  getConfig: () => Promise<ArchiveConfig | null>;
   fetch?: typeof fetch;
 }
 
@@ -105,7 +105,7 @@ export function createEmberModelSource({
   return {
     name: "EMBER",
     async list(_query, signal) {
-      const cfg = getConfig();
+      const cfg = await getConfig();
       if (!cfg?.dandisetId) return [];
       const folders = groupFolders(await listModelAssets(cfg, signal));
       const cards = await Promise.all(folders.map((folder) => toCard(cfg, folder, signal)));

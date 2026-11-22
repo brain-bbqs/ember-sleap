@@ -18,7 +18,8 @@ const fakes = vi.hoisted(() => {
     ensureFreshToken: vi.fn(() => Promise.resolve(refreshed)),
     revokeToken: vi.fn(() => Promise.resolve()),
   };
-  return { signedIn, refreshed, oauth, storageOptions: null as EmberStorageOptions | null };
+  const warning = "Saved, but could not write derivatives/sleap/.bidsignore";
+  return { signedIn, refreshed, oauth, warning, storageOptions: null as EmberStorageOptions | null };
 });
 
 vi.mock("../../src/lib/oauth", async (importOriginal) => ({
@@ -37,6 +38,7 @@ vi.mock("../../src/lib/emberStorage", () => ({
   createEmberStorage: (options: EmberStorageOptions) => {
     fakes.storageOptions = options;
     let opens = 0;
+    let saves = 0;
     return {
       open: (dandisetId: string, project: { path: string }) =>
         ++opens === 1
@@ -47,9 +49,10 @@ vi.mock("../../src/lib/emberStorage", () => ({
               name: "labels.slp",
               ref: { key: `ember:${dandisetId}:${project.path}` },
             }),
+      // The first save's scaffolding is refused; later ones find it written.
       save: () => {
         options.onProgress?.(0.5);
-        options.onWarning?.("Saved, but could not write derivatives/sleap/.bidsignore");
+        if (++saves === 1) options.onWarning?.(fakes.warning);
         return Promise.resolve({ key: "ember:000123:derivatives/sleap/sub-01/beh/sub-01_desc-labels_pose.slp" });
       },
       resolveVideo: () => Promise.resolve(null),
@@ -59,7 +62,19 @@ vi.mock("../../src/lib/emberStorage", () => ({
 }));
 
 const API = "https://api-dandi.emberarchive.org/api";
+const LANDED = "Saved to the draft of dandiset 000123: derivatives/sleap/sub-01/beh/sub-01_desc-labels_pose.slp";
+const WARNING = fakes.warning;
 let fetchMock: FetchRouter;
+
+/** Every text `target` is given, in order, however briefly it shows. */
+function recordTexts(target: HTMLElement): { texts: string[]; stop: () => void } {
+  const texts: string[] = [];
+  const observer = new MutationObserver((records) => {
+    for (const record of records) for (const node of record.addedNodes) texts.push(node.textContent ?? "");
+  });
+  observer.observe(target, { childList: true });
+  return { texts, stop: () => observer.disconnect() };
+}
 
 beforeAll(async () => {
   vi.spyOn(console, "warn").mockImplementation(() => {});
@@ -71,7 +86,7 @@ beforeAll(async () => {
       match: (url) => url.startsWith(`${API}/dandisets/000123/versions/draft/assets/`),
       respond: jsonResponse({ results: [{ asset_id: "a1", path: "sub-01/labels.slp", size: 12 }], next: null }),
     },
-    { match: `${API}/dandisets/000123/versions/draft/`, respond: jsonResponse({}, 500) },
+    { match: `${API}/dandisets/000123/versions/draft/`, respond: jsonResponse({ description: "Pilot." }) },
     { match: `${API}/dandisets/000123/`, respond: jsonResponse({ identifier: "000123" }) },
     {
       match: "https://proxy.example/v1/jobs/p1/events",
@@ -89,11 +104,11 @@ beforeAll(async () => {
 });
 
 describe("main.ts once sign-in, compute and the model index are configured", () => {
-  it("completes the sign-in redirect, refreshes the token, and stores the fresh one", async () => {
+  it("completes the sign-in redirect, refreshes the token once for every call at boot, and stores the fresh one", async () => {
     expect(fakes.oauth.handleRedirectCallback).toHaveBeenCalledTimes(1);
     expect(el("oauthSignedIn").hidden).toBe(false);
     await vi.waitFor(() => expect(el("oauthUsername").textContent).toBe("ada"));
-    expect(fakes.oauth.ensureFreshToken).toHaveBeenCalledWith(fakes.signedIn);
+    expect(fakes.oauth.ensureFreshToken.mock.calls).toEqual([[fakes.signedIn]]);
     const stored = JSON.parse(localStorage.getItem(STORAGE_KEY)!) as { oauth: unknown };
     expect(stored.oauth).toEqual(fakes.refreshed);
   });
@@ -109,6 +124,10 @@ describe("main.ts once sign-in, compute and the model index are configured", () 
     expect(fakes.oauth.startLogin).toHaveBeenCalled();
   });
 
+  it("reports the SLEAP version as unknown until the app has loaded", () => {
+    expect(fakes.storageOptions!.versions().sleap).toBe("unknown");
+  });
+
   it("reports a project that fails to open, and opens it on a second try", async () => {
     const open = () => el("project-list").querySelector("button")!.click();
     open();
@@ -118,14 +137,33 @@ describe("main.ts once sign-in, compute and the model index are configured", () 
     expect(el("open-status").textContent).toBe("");
   });
 
-  it("reports upload progress and warnings, then where the save landed", async () => {
+  it("reports upload progress, then where the save landed with the scaffold warning kept beside it", async () => {
+    const shown = recordTexts(el("host-status"));
     role("save").click();
-    await vi.waitFor(() =>
-      expect(el("host-status").textContent).toBe(
-        "Saved to the draft of dandiset 000123: derivatives/sleap/sub-01/beh/sub-01_desc-labels_pose.slp",
-      ),
-    );
+    await vi.waitFor(() => expect(el("host-status").textContent).toBe(`${LANDED}. ${WARNING}`));
+    shown.stop();
+    expect(shown.texts).toEqual(["Uploading to EMBER… 50%", WARNING, `${LANDED}. ${WARNING}`]);
+    expect(el("host-status").classList.contains("err")).toBe(true);
     expect(fakes.storageOptions!.versions()).toEqual({ app: expect.any(String), sleap: "0.0.0-stand-in" });
+  });
+
+  it("says plainly where a save landed when nothing went wrong", async () => {
+    role("save").click();
+    await vi.waitFor(() => expect(el("host-status").textContent).toBe(LANDED));
+    expect(el("host-status").classList.contains("ok")).toBe(true);
+    expect(el("host-status").classList.contains("err")).toBe(false);
+  });
+
+  it.each([
+    [true, true],
+    [false, false],
+  ])("asks before replacing another project's labels (answered %s)", async (answer, replaced) => {
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(answer);
+    expect(await fakes.storageOptions!.confirmOverwrite("derivatives/sleap/sub-01/beh/x.slp")).toBe(replaced);
+    expect(confirm).toHaveBeenCalledWith(
+      "derivatives/sleap/sub-01/beh/x.slp already holds labels from another project. Replace them?",
+    );
+    confirm.mockRestore();
   });
 
   it("lists models from every source, reporting the ones that fail", async () => {
@@ -137,6 +175,7 @@ describe("main.ts once sign-in, compute and the model index are configured", () 
     expect(fetchMock.callsTo("huggingface.co").length).toBe(1);
     const emberModels = fetchMock.calls.filter((c) => decodeURIComponent(c.url).includes("derivatives/sleap/models/"));
     expect(emberModels.length).toBe(1);
+    expect(new Headers(emberModels[0].init?.headers).get("Authorization")).toBe("Bearer fresh");
   });
 
   it("submits jobs to the proxy with the fresh token", async () => {
@@ -150,5 +189,13 @@ describe("main.ts once sign-in, compute and the model index are configured", () 
     el("oauthSignoutBtn").click();
     expect(fakes.oauth.revokeToken).toHaveBeenCalledWith(fakes.refreshed);
     expect(el("oauthSigninBtn").hidden).toBe(false);
+  });
+
+  it("submits jobs to the proxy with no token once signed out", async () => {
+    const before = fetchMock.callsTo("https://proxy.example/v1/jobs").length;
+    role("train").click();
+    await vi.waitFor(() => expect(fetchMock.callsTo("https://proxy.example/v1/jobs").length).toBeGreaterThan(before));
+    const submit = fetchMock.callsTo("https://proxy.example/v1/jobs")[before];
+    expect(new Headers(submit.init?.headers).get("Authorization")).toBeNull();
   });
 });

@@ -166,6 +166,40 @@ test.describe("EMBER storage", () => {
     expect(archive.created[3]).toMatchObject({ method: "PUT", path: target });
   });
 
+  test("gives each project of a session its own labels file", async ({ page }) => {
+    const archive = await routeArchive(page, [
+      { asset_id: "a1", path: "sub-01/ses-02/beh/cam-side.slp", size: 64 },
+      { asset_id: "a2", path: "sub-01/ses-02/beh/cam-top.slp", size: 64 },
+    ]);
+    const folder = "derivatives/sleap/sub-01/ses-02/beh";
+    const targets = [
+      `${folder}/sub-01_ses-02_desc-labelsCamTop_pose.slp`,
+      `${folder}/sub-01_ses-02_desc-labelsCamSide_pose.slp`,
+    ];
+    for (const [source, target] of [
+      ["sub-01/ses-02/beh/cam-top.slp", targets[0]],
+      ["sub-01/ses-02/beh/cam-side.slp", targets[1]],
+    ]) {
+      await openProject(page, source);
+      await role(page, "save").click();
+      await expect(page.locator("#host-status")).toContainText(target);
+    }
+    expect(archive.created.filter((c) => c.path.startsWith(folder)).map((c) => [c.method, c.path])).toEqual(
+      targets.map((target) => ["POST", target]),
+    );
+  });
+
+  test("saves a proofread predictions file beside it as labels, leaving the predictions alone", async ({ page }) => {
+    const predictions = "derivatives/sleap/sub-01/beh/sub-01_desc-predictions_pose.slp";
+    const archive = await routeArchive(page, [{ asset_id: "p1", path: predictions, size: 64 }]);
+    await openProject(page, predictions);
+    await role(page, "save").click();
+    const target = "derivatives/sleap/sub-01/beh/sub-01_desc-labels_pose.slp";
+    await expect(page.locator("#host-status")).toContainText(target);
+    expect(archive.created[0]).toMatchObject({ method: "POST", path: target });
+    expect(archive.created.map((c) => c.path)).not.toContain(predictions);
+  });
+
   test("asks for a subject when the project's path names none", async ({ page }) => {
     const archive = await routeArchive(page, [{ asset_id: "a1", path: "raw/labels.slp", size: 64 }]);
     await openProject(page, "raw/labels.slp");

@@ -38,7 +38,7 @@ test.describe("the embedded SLEAP app", () => {
     await role(page, "edit").click();
     await page.keyboard.press("Control+s");
     await expect(page.locator("#host-status")).toHaveText(
-      "Saved in memory (test injection): derivatives/sleap/sub-mock/beh/sub-mock_desc-labels_pose.slp",
+      "Saved in memory (test injection): derivatives/sleap/sub-mock/beh/sub-mock_desc-labelsTestInjectionMockProject_pose.slp",
     );
     await expect(role(page, "dirty")).toBeHidden();
   });

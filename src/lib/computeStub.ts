@@ -1,5 +1,13 @@
+import { entitiesFromPath, modelFolderPath, posePath } from "./bidsDerivatives";
 import type { JobEvent, TrackJobSpec, TrainJobSpec } from "./sleapContract";
-import { isTerminalEvent, type ClearTimer, type ComputeClient, type JobRequest, type SetTimer } from "./computeClient";
+import {
+  isTerminalEvent,
+  TRAIN_NEEDS_SAVED_PROJECT,
+  type ClearTimer,
+  type ComputeClient,
+  type JobRequest,
+  type SetTimer,
+} from "./computeClient";
 
 export interface StubComputeOptions {
   /** Time between one scripted event and the next. */
@@ -34,14 +42,8 @@ function inputLogs(request: JobRequest): ScriptedEvent[] {
 const round = (value: number) => Math.round(value * 1e4) / 1e4;
 
 function trainScript(request: JobRequest, spec: TrainJobSpec, jobNumber: number): ScriptedEvent[] {
-  if (!spec.labels_path) {
-    return [
-      status(
-        "failed",
-        "This host trains from a project saved on EMBER (labels_path), not from inline labels: save the project to EMBER first.",
-      ),
-    ];
-  }
+  // The host refuses these before submitting; the stub refuses them too, as the proxy would.
+  if (!spec.labels_path || spec.labels_content) return [status("failed", TRAIN_NEEDS_SAVED_PROJECT)];
   const epochs = spec.max_epochs ?? DEFAULT_EPOCHS;
   const events: ScriptedEvent[] = [status("queued"), status("running"), ...inputLogs(request)];
   let trainLoss = 0;
@@ -66,24 +68,39 @@ function trainScript(request: JobRequest, spec: TrainJobSpec, jobNumber: number)
         best_loss: valLoss,
       },
     },
-    { topic: "job.result", data: { model_id: modelId, model_dir: `derivatives/sleap/models/${modelId}/` } },
+    { topic: "job.result", data: trainResult(request, spec.labels_path, modelId) },
     status("completed"),
   );
   return events;
 }
 
+/**
+ * Upstream reads `model_dir` as a `model_paths` entry for a follow-up track job and `labels_path` as
+ * that job's `data_path`, so `model_dir` is the card id the EMBER model source gives the folder.
+ * Without a dandiset there is no such id, and upstream then skips post-training inference itself.
+ */
+function trainResult(request: JobRequest, labelsPath: string, modelId: string): Record<string, unknown> {
+  const modelDir = request.project ? { model_dir: `ember:${request.project.dandisetId}/${modelId}` } : {};
+  return { model_id: modelId, ...modelDir, model_path: modelFolderPath(modelId), labels_path: labelsPath };
+}
+
 function trackScript(request: JobRequest, spec: TrackJobSpec): ScriptedEvent[] {
+  const fromProject = request.project ? entitiesFromPath(request.project.path) : null;
+  const predictions: string[] = [];
+  for (const input of request.inputs) {
+    const entities = fromProject ?? entitiesFromPath(input.name);
+    if (!entities) {
+      const why = "neither the project's path nor the input's name names its subject (sub-<label>)";
+      return [status("failed", `Cannot place the predictions for ${input.name}: ${why}.`)];
+    }
+    predictions.push(posePath(entities, "predictions", "slp"));
+  }
   return [
     status("queued"),
     status("running"),
     ...inputLogs(request),
     ...spec.model_paths.map((id) => log(`Model: ${id}`)),
-    {
-      topic: "job.result",
-      data: {
-        predictions: request.inputs.map((input) => `derivatives/sleap/predictions/${input.name}.predictions.slp`),
-      },
-    },
+    { topic: "job.result", data: { predictions } },
     status("completed"),
   ];
 }

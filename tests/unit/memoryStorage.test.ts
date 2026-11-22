@@ -25,7 +25,21 @@ describe("createMemoryStorage", () => {
       "train.pkg.slp",
       toHostRef({ dandisetId: "mock", path: "train.pkg.slp" }),
     );
-    expect(ref.key).toBe("ember:mock:derivatives/sleap/sub-mock/beh/sub-mock_desc-labels_pose.pkg.slp");
+    expect(ref.key).toBe("ember:mock:derivatives/sleap/sub-mock/beh/sub-mock_desc-labelsTrain_pose.pkg.slp");
+  });
+
+  it("saves the next time back over the labels file the first save made", async () => {
+    const storage = createMemoryStorage();
+    const first = await storage.save(
+      new Blob(["a"]),
+      "cam-top.slp",
+      toHostRef({ dandisetId: "mock", path: "sub-01/cam-top.slp" }),
+    );
+    expect(await storage.save(new Blob(["ab"]), "cam-top.slp", first)).toEqual(first);
+    expect(storage.saved).toEqual([
+      { path: "derivatives/sleap/sub-01/beh/sub-01_desc-labelsCamTop_pose.slp", size: 1 },
+      { path: "derivatives/sleap/sub-01/beh/sub-01_desc-labelsCamTop_pose.slp", size: 2 },
+    ]);
   });
 
   it("refuses a project with no EMBER location", async () => {

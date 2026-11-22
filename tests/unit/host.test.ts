@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { ComputeClient } from "../../src/lib/computeClient";
+import { TRAIN_NEEDS_SAVED_PROJECT, type ComputeClient } from "../../src/lib/computeClient";
 import type { ProjectStorage } from "../../src/lib/emberStorage";
 import { buildJobRequest, createSleapHost } from "../../src/lib/host";
 import { toHostRef } from "../../src/lib/hostRef";
@@ -45,9 +45,28 @@ describe("buildJobRequest", () => {
     });
   });
 
-  it("leaves out the labels a train job does not name, and the project when there is none", () => {
-    const spec = train();
-    expect(buildJobRequest(spec, undefined, new Map(), new Map())).toEqual({ spec, inputs: [], models: [] });
+  it("leaves out the validation labels a train job does not name, and the project when there is none", () => {
+    const spec = train({ labels_path: LABELS.url });
+    expect(buildJobRequest(spec, undefined, filesOf(LABELS), new Map())).toEqual({
+      spec,
+      inputs: [{ url: LABELS.url, fileType: "pkg.slp", name: "train.pkg.slp" }],
+      models: [],
+    });
+  });
+
+  it.each([
+    ["no labels at all", {}],
+    ["inline labels only", { labels_content: "AAAA" }],
+    ["inline labels beside a saved project", { labels_path: LABELS.url, labels_content: "AAAA" }],
+  ])("refuses a train job with %s, so no compute client is sent inline labels", (_label, labels) => {
+    expect(() => buildJobRequest(train(labels), project, filesOf(LABELS), new Map())).toThrow(
+      new Error(TRAIN_NEEDS_SAVED_PROJECT),
+    );
+  });
+
+  it.each([[null], [""]])("accepts a saved project's train job whose labels_content is %j", (labelsContent) => {
+    const spec = train({ labels_path: LABELS.url, labels_content: labelsContent });
+    expect(buildJobRequest(spec, project, filesOf(LABELS), new Map()).spec).toBe(spec);
   });
 
   it("expands a track job's model ids to the files the worker downloads", () => {
@@ -107,6 +126,13 @@ describe("createSleapHost", () => {
     expect(compute.submit).toHaveBeenCalledWith(
       expect.objectContaining({ inputs: [{ url: LABELS.url, fileType: "pkg.slp", name: "train.pkg.slp" }] }),
     );
+  });
+
+  it("refuses to train from inline labels before compute sees the job", async () => {
+    const { host, compute } = setup();
+    const refused = host.submitJob(train({ labels_content: "AAAA" }), project);
+    await expect(refused).rejects.toThrow(TRAIN_NEEDS_SAVED_PROJECT);
+    expect(compute.submit).not.toHaveBeenCalled();
   });
 
   it("refuses a job on a file it never saw", async () => {

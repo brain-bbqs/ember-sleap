@@ -43,7 +43,7 @@ describe("?test&mock_project", () => {
     role("save").click();
     await vi.waitFor(() =>
       expect(el("host-status").textContent).toBe(
-        "Saved in memory (test injection): derivatives/sleap/sub-mock/beh/sub-mock_desc-labels_pose.slp",
+        "Saved in memory (test injection): derivatives/sleap/sub-mock/beh/sub-mock_desc-labelsTestInjectionMockProject_pose.slp",
       ),
     );
   });

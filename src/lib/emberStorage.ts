@@ -5,7 +5,7 @@ import {
   DATASET_DESCRIPTION_PATH,
   datasetDescription,
   entitiesFromPath,
-  isDerivativePath,
+  isLabelsPath,
   labelsSavePath,
   type BidsEntities,
 } from "./bidsDerivatives";
@@ -39,6 +39,8 @@ export interface EmberStorageOptions {
   config: (dandisetId: string) => Promise<ArchiveConfig>;
   /** Asks the person for a subject (and session) when a source path names none; null cancels. */
   askEntities: (sourcePath: string) => Promise<BidsEntities | null>;
+  /** Asks before a save replaces labels another project left at `path`; false cancels the save. */
+  confirmOverwrite: (path: string) => Promise<boolean>;
   /** Why saving to this dandiset is refused right now (the human-subjects gate), or null. */
   saveRefusal?: (dandisetId: string) => string | null;
   /** Read at save time: the app version is fixed, but the SLEAP component loads on first open. */
@@ -55,7 +57,16 @@ interface Located {
 }
 
 export function createEmberStorage(options: EmberStorageOptions): EmberStorage {
-  const { config, askEntities, saveRefusal, versions, onProgress, onWarning = console.warn, fetch } = options;
+  const {
+    config,
+    askEntities,
+    confirmOverwrite,
+    saveRefusal,
+    versions,
+    onProgress,
+    onWarning = console.warn,
+    fetch,
+  } = options;
   // Which asset each URL handed to the app came from, so an expired presigned link can be renewed.
   const located = new Map<string, Located>();
 
@@ -113,11 +124,14 @@ export function createEmberStorage(options: EmberStorageOptions): EmberStorage {
       if (!cfg.accessToken) throw new Error("Sign in with EMBER to save.");
 
       let target = source.path;
-      if (!isDerivativePath(source.path)) {
+      if (!isLabelsPath(source.path)) {
         const entities = entitiesFromPath(source.path) ?? (await askEntities(source.path));
         if (!entities)
           throw new Error("Save cancelled: a subject is needed to place the labels in derivatives/sleap/.");
         target = labelsSavePath(source.path, name, entities);
+        // Asked before the upload, so a cancelled save sends no bytes.
+        if ((await findAssetByPath(cfg, target)) && !(await confirmOverwrite(target)))
+          throw new Error(`Save cancelled: ${target} already holds other labels.`);
       }
       await putAsset(cfg, target, file, onProgress);
       await ensureScaffold(cfg);

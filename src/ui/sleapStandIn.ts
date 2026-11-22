@@ -1,10 +1,11 @@
 // A stand-in for `mountSleapApp` from `@talmolab/sleap-app`, which is not published yet. It does
 // none of SLEAP's work; it holds the app's place in the page and drives every host callback the
 // way the contract (src/lib/sleapContract.ts) says the real app will: it reads the opened file over
-// ranged requests by its declared type, saves through `host.save`, finds videos through
-// `host.resolveVideo`, lists models and submits, follows and cancels jobs through the host, and
-// keeps its keyboard shortcut and page side effects inside the box it was mounted in. When the real
-// package ships, src/ui/sleapComponent.ts mounts that instead and this file goes.
+// ranged requests by its declared type, saves through `host.save` (after `host.refreshUrl` when the
+// open link has expired), finds videos through `host.resolveVideo`, lists models and submits,
+// follows and cancels jobs through the host, and keeps its keyboard shortcut and page side effects
+// inside the box it was mounted in. When the real package ships, src/ui/sleapComponent.ts mounts
+// that instead and this file goes.
 import { button, h } from "@brain-bbqs/ui";
 import { humanSize } from "@brain-bbqs/utils";
 import type {
@@ -98,6 +99,8 @@ export function mountStandIn(el: HTMLElement, options: MountOptions): SleapAppHa
   let dirty = false;
   let stopJob: (() => void) | null = null;
   let jobId: string | null = null;
+  // Bumped by every open(), so work that outlives the project it started for leaves the next one alone.
+  let opened = 0;
 
   const root = h("div", "sleap-app sleap-standin");
   root.tabIndex = -1;
@@ -187,19 +190,43 @@ export function mountStandIn(el: HTMLElement, options: MountOptions): SleapAppHa
     target.classList.toggle("err", tone === "err");
   }
 
+  /**
+   * The project's bytes. A presigned link expires while a project stays open, and S3 then answers
+   * 403 with a readable error body, so the link is refreshed once and any other failure throws
+   * rather than handing that body to `host.save`.
+   */
+  async function readProject(project: OpenRequest, isCurrent: () => boolean): Promise<Blob> {
+    let response = await fetch(project.url);
+    if (response.status === 403 && host.refreshUrl) {
+      const fresh = await host.refreshUrl(project);
+      if (isCurrent()) file = { ...project, url: fresh.url };
+      response = await fetch(fresh.url);
+    }
+    if (!response.ok) throw new Error(`Could not read the project (HTTP ${response.status}).`);
+    return response.blob();
+  }
+
   async function save(): Promise<void> {
     if (!file) return say(saveStatus, "Open a project before saving.", "err");
     if (!host.save) return say(saveStatus, "This page does not offer saving.", "err");
+    const project = file;
+    const from = ref;
+    const generation = opened;
+    const isCurrent = () => opened === generation;
     say(saveStatus, "Saving…");
     try {
       // The real app serializes its edited labels; the stand-in has no edits of its own to write,
       // so it sends the project's bytes back unchanged through the same callback.
-      const blob = await (await fetch(file.url)).blob();
-      ref = await host.save(blob, file.name, ref);
+      const blob = await readProject(project, isCurrent);
+      const saved = await host.save(blob, project.name, from);
+      // The host's own status line reports where an earlier project's save landed; taking its ref
+      // here would point the project now open at that project's file.
+      if (!isCurrent()) return;
+      ref = saved;
       setDirty(false);
       say(saveStatus, `Saved ${humanSize(blob.size)}.`, "ok");
     } catch (e) {
-      say(saveStatus, `Save failed: ${e instanceof Error ? e.message : String(e)}`, "err");
+      if (isCurrent()) say(saveStatus, `Save failed: ${e instanceof Error ? e.message : String(e)}`, "err");
     }
   }
 
@@ -301,6 +328,7 @@ export function mountStandIn(el: HTMLElement, options: MountOptions): SleapAppHa
 
   return {
     async open(request) {
+      const generation = ++opened;
       file = request;
       ref = request.ref;
       setDirty(false);
@@ -313,8 +341,10 @@ export function mountStandIn(el: HTMLElement, options: MountOptions): SleapAppHa
       say(probe, "Reading…");
       try {
         const head = await readHead(request.url, SIGNATURE_BYTES);
+        if (opened !== generation) return;
         say(probe, `Read the first ${head.length} bytes with a ranged request: ${describeSignature(head)}.`, "ok");
       } catch (e) {
+        if (opened !== generation) return;
         say(probe, `Could not read the file: ${e instanceof Error ? e.message : String(e)}`, "err");
       }
     },

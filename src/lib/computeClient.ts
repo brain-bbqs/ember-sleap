@@ -35,6 +35,13 @@ export interface ComputeClient {
   cancel(jobId: string): Promise<void>;
 }
 
+/** Why a train spec is refused: this page trains only from a project saved on EMBER, never from inline labels. */
+export const TRAIN_NEEDS_SAVED_PROJECT =
+  "This page trains from a project saved on EMBER: save the project, then train.";
+
+/** The longest wait between event polls while the proxy keeps failing. */
+export const MAX_POLL_BACKOFF_MS = 30_000;
+
 export const TERMINAL_JOB_STATES: ReadonlySet<JobState> = new Set<JobState>(["completed", "failed", "canceled"]);
 
 /** Whether `event` is the `job.status` that ends its job's stream. */
@@ -48,7 +55,10 @@ export type ClearTimer = (handle: unknown) => void;
 export interface ProxyComputeClientOptions {
   /** The proxy's job API root, e.g. "https://proxy.example.org/v1" (no trailing slash needed). */
   baseUrl: string;
-  /** The signed-in user's EMBER access token, or null when there is none. */
+  /**
+   * The signed-in user's EMBER access token, or null when there is none. Sending it to the proxy is
+   * the one exception SECURITY.md makes to never forwarding a user's token.
+   */
   getToken: () => Promise<string | null>;
   fetch?: typeof fetch;
   pollMs?: number;
@@ -98,27 +108,51 @@ export function createProxyComputeClient({
       let lastSeq = 0;
       let stopped = false;
       let timer: unknown = null;
+      let retryMs = pollMs;
+
+      // A subscriber's bug must not stall the stream: the rest of the batch is still delivered, and
+      // the job still ends at its terminal event.
+      function deliver(event: JobEvent): void {
+        try {
+          onEvent(event);
+        } catch (error) {
+          console.error(`A subscriber to job ${jobId} threw on event ${event.seq}:`, error);
+        }
+      }
 
       async function poll(): Promise<void> {
         timer = null;
+        let failed = false;
         try {
           const response = await call(jobUrl(jobId, `/events?after=${lastSeq}`));
+          if (stopped) return;
+          if (response.status === 404 || response.status === 410) {
+            // Nothing will ever come for this job, so the viewer is told once instead of left waiting.
+            stopped = true;
+            const detail = `The compute proxy no longer knows this job (HTTP ${response.status}).`;
+            deliver({ topic: "job.status", seq: lastSeq + 1, jobId, data: { state: "failed", detail } });
+            return;
+          }
           if (!response.ok) throw new Error(`HTTP ${response.status}`);
           const { events } = (await response.json()) as { events?: JobEvent[] };
           for (const event of [...(events ?? [])].sort((a, b) => a.seq - b.seq)) {
             if (stopped) return;
             if (event.seq <= lastSeq) continue;
             lastSeq = event.seq;
-            onEvent(event);
-            if (isTerminalEvent(event)) {
-              stopped = true;
-              return;
-            }
+            const terminal = isTerminalEvent(event);
+            if (terminal) stopped = true;
+            deliver(event);
+            if (terminal) return;
           }
         } catch {
-          // A dropped poll is retried on the next tick; the stream resumes from the last seq seen.
+          // Signed out (401), a proxy restart or a dropped connection: retried with backoff, and the
+          // stream resumes from the last seq seen, so signing back in picks it up again.
+          failed = true;
         }
-        if (!stopped) timer = setTimer(() => void poll(), pollMs);
+        if (stopped) return;
+        const wait = failed ? retryMs : pollMs;
+        retryMs = failed ? Math.min(retryMs * 2, MAX_POLL_BACKOFF_MS) : pollMs;
+        timer = setTimer(() => void poll(), wait);
       }
 
       void poll();

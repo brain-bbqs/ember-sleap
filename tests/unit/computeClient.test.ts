@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
-import { createProxyComputeClient, isTerminalEvent, type JobRequest } from "../../src/lib/computeClient";
+import {
+  createProxyComputeClient,
+  isTerminalEvent,
+  MAX_POLL_BACKOFF_MS,
+  type JobRequest,
+} from "../../src/lib/computeClient";
 import type { JobEvent } from "../../src/lib/sleapContract";
 
 const BASE = "https://proxy.test/v1/";
@@ -186,6 +191,7 @@ describe("createProxyComputeClient subscribe", () => {
 
   it.each([
     ["an HTTP error", () => Promise.resolve(json({}, 502))],
+    ["a refusal while signed out", () => Promise.resolve(json({}, 401))],
     ["a network error", () => Promise.reject(new TypeError("Failed to fetch"))],
     ["a body without events", () => Promise.resolve(json({}))],
   ])("retries on the next tick after %s, reporting nothing", async (_label, failure) => {
@@ -211,6 +217,135 @@ describe("createProxyComputeClient subscribe", () => {
     timers.fire();
     await vi.waitFor(() => expect(onEvent).toHaveBeenCalledTimes(1));
     expect(fetchMock.mock.calls[1][0]).toBe("https://proxy.test/v1/jobs/j1/events?after=0");
+  });
+
+  it("backs off while polls keep failing, up to a cap, and polls on the usual tick again after a success", async () => {
+    const timers = manualTimers();
+    let token: string | null = null;
+    const fetchMock = vi.fn<typeof fetch>((_url, init) =>
+      Promise.resolve(headerOf(init, "Authorization") ? json({ events: [] }) : json({}, 401)),
+    );
+    const client = createProxyComputeClient({
+      baseUrl: BASE,
+      getToken: async () => token,
+      fetch: fetchMock,
+      pollMs: 5000,
+      setTimer: timers.setTimer,
+      clearTimer: timers.clearTimer,
+    });
+    const waits: number[] = [];
+    const next = async () => {
+      const before = fetchMock.mock.calls.length;
+      timers.fire();
+      await vi.waitFor(() => expect(fetchMock.mock.calls.length).toBe(before + 1));
+      await vi.waitFor(() => expect(timers.pending.length).toBe(1));
+      waits.push(timers.pending[0].ms);
+    };
+
+    client.subscribe("j1", vi.fn());
+    await vi.waitFor(() => expect(timers.pending.length).toBe(1));
+    waits.push(timers.pending[0].ms);
+    for (let i = 0; i < 4; i++) await next();
+    token = "tok";
+    await next();
+    token = null;
+    await next();
+
+    expect(waits).toEqual([5000, 10_000, 20_000, MAX_POLL_BACKOFF_MS, MAX_POLL_BACKOFF_MS, 5000, 5000]);
+    expect(headerOf(fetchMock.mock.calls[5][1], "Authorization")).toBe("Bearer tok");
+  });
+
+  it.each([404, 410])("ends the job as failed, once, when the proxy answers %i for its events", async (code) => {
+    const timers = manualTimers();
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(json({ events: [ev(1, "job.status", { state: "queued" })] }))
+      .mockResolvedValue(json({ detail: "Not found" }, code));
+    const client = createProxyComputeClient({
+      baseUrl: BASE,
+      getToken: async () => "tok",
+      fetch: fetchMock,
+      setTimer: timers.setTimer,
+      clearTimer: timers.clearTimer,
+    });
+    const events: JobEvent[] = [];
+
+    client.subscribe("j1", (e) => events.push(e));
+    await vi.waitFor(() => expect(timers.pending.length).toBe(1));
+    timers.fire();
+    await vi.waitFor(() => expect(events.length).toBe(2));
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(events[1]).toEqual({
+      topic: "job.status",
+      seq: 2,
+      jobId: "j1",
+      data: { state: "failed", detail: `The compute proxy no longer knows this job (HTTP ${code}).` },
+    });
+    expect(timers.pending.length).toBe(0);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps delivering the batch past a subscriber that throws, and still stops at the terminal status", async () => {
+    const timers = manualTimers();
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    const batch = [
+      ev(1, "job.status", { state: "running" }),
+      ev(2, "job.log", { line: "hi" }),
+      ev(3, "job.status", { state: "completed" }),
+    ];
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(json({ events: batch }));
+    const client = createProxyComputeClient({
+      baseUrl: BASE,
+      getToken: async () => null,
+      fetch: fetchMock,
+      setTimer: timers.setTimer,
+      clearTimer: timers.clearTimer,
+    });
+    const seen: number[] = [];
+
+    try {
+      client.subscribe("j1", (e) => {
+        seen.push(e.seq);
+        if (e.seq !== 2) throw new Error(`viewer bug on ${e.seq}`);
+      });
+      await vi.waitFor(() => expect(seen).toEqual([1, 2, 3]));
+      await new Promise((r) => setTimeout(r, 0));
+
+      expect(timers.pending.length).toBe(0);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(consoleError).toHaveBeenCalledTimes(2);
+      expect(consoleError).toHaveBeenLastCalledWith(
+        "A subscriber to job j1 threw on event 3:",
+        new Error("viewer bug on 3"),
+      );
+    } finally {
+      consoleError.mockRestore();
+    }
+  });
+
+  it("delivers nothing more, and schedules nothing, once the subscriber unsubscribes mid-batch", async () => {
+    const timers = manualTimers();
+    const batch = [ev(1, "job.status", { state: "running" }), ev(2, "job.log", { line: "x" })];
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(json({ events: batch }));
+    const client = createProxyComputeClient({
+      baseUrl: BASE,
+      getToken: async () => null,
+      fetch: fetchMock,
+      setTimer: timers.setTimer,
+      clearTimer: timers.clearTimer,
+    });
+    const seen: number[] = [];
+
+    const stop = client.subscribe("j1", (e) => {
+      seen.push(e.seq);
+      stop();
+    });
+    await vi.waitFor(() => expect(seen).toEqual([1]));
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(seen).toEqual([1]);
+    expect(timers.pending.length).toBe(0);
   });
 
   it("clears the pending poll on unsubscribe", async () => {

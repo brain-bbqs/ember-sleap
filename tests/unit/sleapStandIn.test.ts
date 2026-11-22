@@ -1,14 +1,45 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { JobEvent, MountOptions, SleapAppHandle, SleapHost } from "../../src/lib/sleapContract";
+import type {
+  HostRef,
+  JobEvent,
+  MountOptions,
+  ResolvedFile,
+  SleapAppHandle,
+  SleapHost,
+} from "../../src/lib/sleapContract";
 import { describeSignature, mountStandIn, readHead, STAND_IN_VERSION } from "../../src/ui/sleapStandIn";
 
 const HDF5 = [0x89, 0x48, 0x44, 0x46, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0];
 const FILE = { url: "https://bucket.example/blobs/abc", fileType: "slp" as const, name: "labels.slp" };
 const REF = { key: "ember:000123:sub-01/labels.slp" };
+const FRESH_URL = `${FILE.url}?fresh`;
+const OTHER_REF = { key: "ember:000123:sub-02/other.slp" };
+const OTHER = { url: "https://bucket.example/blobs/def", fileType: "slp" as const, name: "other.slp", ref: OTHER_REF };
+const SAVED = { key: "ember:000123:derivatives/sleap/sub-01/beh/sub-01_desc-labels_pose.slp" };
 
 function bytesResponse(bytes: number[], status = 206): Response {
   return new Response(new Uint8Array(bytes), { status });
+}
+
+/** What S3 answers once a presigned link has expired: a 403 with a body the page can read. */
+const expired = () =>
+  new Response('<?xml version="1.0" encoding="UTF-8"?><Error><Code>AccessDenied</Code></Error>', { status: 403 });
+
+interface Deferred<T> {
+  promise: Promise<T>;
+  resolve: (value: T) => void;
+  reject: (reason: unknown) => void;
+}
+
+function deferred<T>(): Deferred<T> {
+  let resolve: Deferred<T>["resolve"] = () => {};
+  let reject: Deferred<T>["reject"] = () => {};
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
 }
 
 function q<T extends HTMLElement = HTMLElement>(root: ParentNode, name: string): T {
@@ -26,6 +57,13 @@ let fetchMock: ReturnType<typeof vi.fn>;
 function mount(options: Partial<MountOptions> = {}): SleapAppHandle {
   handle = mountStandIn(container, { assetBaseUrl: "https://page.example/sleap-assets/", ...options });
   return handle;
+}
+
+/** Answers each URL from its own route, and anything else with a 404. */
+function serve(routes: Partial<Record<string, () => Response | Promise<Response>>>): void {
+  fetchMock.mockImplementation((input: string | URL | Request) =>
+    Promise.resolve(routes[String(input)]?.() ?? new Response(null, { status: 404 })),
+  );
 }
 
 beforeEach(() => {
@@ -216,6 +254,130 @@ describe("mountStandIn", () => {
       q(container, "edit").dispatchEvent(new KeyboardEvent("keydown", { key: "s", bubbles: true }));
       await flush();
       expect(save).toHaveBeenCalledTimes(1);
+    });
+
+    it("refreshes an expired link once, saves what the fresh one serves, and keeps reading from it", async () => {
+      const save = vi.fn<NonNullable<SleapHost["save"]>>(() => Promise.resolve(SAVED));
+      const refreshUrl = vi.fn<NonNullable<SleapHost["refreshUrl"]>>((file) =>
+        Promise.resolve({ ...file, url: FRESH_URL }),
+      );
+      const submitJob = vi.fn<NonNullable<SleapHost["submitJob"]>>(() => Promise.resolve({ jobId: "job-1" }));
+      const app = mount({ host: { save, refreshUrl, submitJob } });
+      await app.open({ ...FILE, ref: REF });
+      serve({ [FILE.url]: expired, [FRESH_URL]: () => bytesResponse([1, 2, 3], 200) });
+      q(container, "edit").click();
+
+      q(container, "save").click();
+      await vi.waitFor(() => expect(q(container, "save-status").textContent).toBe("Saved 3 B."));
+      expect(refreshUrl).toHaveBeenCalledWith({ ...FILE, ref: REF });
+      expect(save).toHaveBeenCalledWith(expect.objectContaining({ size: 3 }), "labels.slp", REF);
+      expect(app.isDirty()).toBe(false);
+
+      q(container, "save").click();
+      await vi.waitFor(() => expect(save).toHaveBeenCalledTimes(2));
+      expect(refreshUrl).toHaveBeenCalledTimes(1);
+      q(container, "train").click();
+      await vi.waitFor(() => expect(submitJob).toHaveBeenCalled());
+      expect(submitJob).toHaveBeenCalledWith(expect.objectContaining({ labels_path: FRESH_URL }), SAVED);
+    });
+
+    // The fresh link is refused too, so a refresh never rescues a read in these cases.
+    it.each([
+      { what: "an expired link the host cannot refresh", canRefresh: false, status: 403, refreshes: 0 },
+      { what: "a link still refused after one refresh", canRefresh: true, status: 403, refreshes: 1 },
+      { what: "a server error, which a refresh would not fix", canRefresh: true, status: 500, refreshes: 0 },
+    ])("never hands host.save the body of $what, and keeps the edits", async ({ canRefresh, status, refreshes }) => {
+      const save = vi.fn<NonNullable<SleapHost["save"]>>(() => Promise.resolve(SAVED));
+      const refreshUrl = vi.fn<NonNullable<SleapHost["refreshUrl"]>>((file) =>
+        Promise.resolve({ ...file, url: FRESH_URL }),
+      );
+      const app = mount({ host: canRefresh ? { save, refreshUrl } : { save } });
+      await app.open({ ...FILE, ref: REF });
+      const errorBody = () => new Response("<Error/>", { status });
+      serve({ [FILE.url]: errorBody, [FRESH_URL]: errorBody });
+      q(container, "edit").click();
+
+      q(container, "save").click();
+      await vi.waitFor(() =>
+        expect(q(container, "save-status").textContent).toBe(
+          `Save failed: Could not read the project (HTTP ${status}).`,
+        ),
+      );
+      expect(save).not.toHaveBeenCalled();
+      expect(refreshUrl).toHaveBeenCalledTimes(refreshes);
+      expect(app.isDirty()).toBe(true);
+    });
+  });
+
+  describe("opening another project while work on the last one is in flight", () => {
+    it.each([
+      ["finishes", (pending: Deferred<HostRef>) => pending.resolve(SAVED)],
+      ["fails", (pending: Deferred<HostRef>) => pending.reject(new Error("Permission denied"))],
+    ])("leaves the new project's ref, edits and status alone when the earlier save %s", async (_outcome, settle) => {
+      const pending = deferred<HostRef>();
+      const save = vi
+        .fn<NonNullable<SleapHost["save"]>>()
+        .mockReturnValueOnce(pending.promise)
+        .mockResolvedValue(OTHER_REF);
+      const app = mount({ host: { save } });
+      serve({ [FILE.url]: () => bytesResponse(HDF5), [OTHER.url]: () => bytesResponse([1, 2]) });
+      await app.open({ ...FILE, ref: REF });
+      q(container, "edit").click();
+      q(container, "save").click();
+      await vi.waitFor(() => expect(save).toHaveBeenCalledTimes(1));
+
+      await app.open(OTHER);
+      q(container, "edit").click();
+      settle(pending);
+      await flush();
+      expect(app.isDirty()).toBe(true);
+      expect(q(container, "save-status").textContent).toBe("");
+
+      q(container, "save").click();
+      await vi.waitFor(() => expect(save).toHaveBeenCalledTimes(2));
+      expect(save.mock.calls).toEqual([
+        [expect.objectContaining({ size: 12 }), "labels.slp", REF],
+        [expect.objectContaining({ size: 2 }), "other.slp", OTHER_REF],
+      ]);
+    });
+
+    it("saves what it read under the earlier project's name and ref, and keeps its fresh link to itself", async () => {
+      const refreshed = deferred<ResolvedFile>();
+      const save = vi.fn<NonNullable<SleapHost["save"]>>(() => Promise.resolve(SAVED));
+      const submitJob = vi.fn<NonNullable<SleapHost["submitJob"]>>(() => Promise.resolve({ jobId: "job-1" }));
+      const app = mount({ host: { save, refreshUrl: () => refreshed.promise, submitJob } });
+      await app.open({ ...FILE, ref: REF });
+      serve({
+        [FILE.url]: expired,
+        [FRESH_URL]: () => bytesResponse(HDF5, 200),
+        [OTHER.url]: () => bytesResponse([1, 2]),
+      });
+
+      q(container, "save").click();
+      await app.open(OTHER);
+      refreshed.resolve({ ...FILE, url: FRESH_URL });
+      await vi.waitFor(() => expect(save).toHaveBeenCalledTimes(1));
+      expect(save).toHaveBeenCalledWith(expect.objectContaining({ size: 12 }), "labels.slp", REF);
+
+      q(container, "train").click();
+      await vi.waitFor(() => expect(submitJob).toHaveBeenCalled());
+      expect(submitJob).toHaveBeenCalledWith(expect.objectContaining({ labels_path: OTHER.url }), OTHER_REF);
+    });
+
+    it.each([
+      ["result", () => bytesResponse([1, 2, 3])],
+      ["failure", () => new Response(null, { status: 500 })],
+    ])("shows the open project's probe, not an earlier project's late %s", async (_kind, late) => {
+      const probe = deferred<Response>();
+      serve({ [FILE.url]: () => probe.promise, [OTHER.url]: () => bytesResponse(HDF5) });
+      const app = mount();
+      const first = app.open(FILE);
+      await app.open(OTHER);
+      probe.resolve(late());
+      await first;
+      expect(q(container, "file-probe").textContent).toBe(
+        "Read the first 12 bytes with a ranged request: HDF5 signature.",
+      );
     });
   });
 

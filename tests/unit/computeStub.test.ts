@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { JobRequest } from "../../src/lib/computeClient";
+import { TRAIN_NEEDS_SAVED_PROJECT, type JobRequest } from "../../src/lib/computeClient";
 import { createStubCompute } from "../../src/lib/computeStub";
 import type { JobEvent } from "../../src/lib/sleapContract";
 
@@ -23,7 +23,15 @@ const trackRequest: JobRequest = {
   spec: { type: "track", data_path: VIDEO_URL, model_paths: ["hf:lab/mice", "ember:000398/models/a"] },
   inputs: [{ url: VIDEO_URL, fileType: "mp4", name: "session1.mp4" }],
   models: [],
+  project: { dandisetId: "000398", path: "sub-01/ses-02/beh/session1.slp" },
 };
+
+/** `request` sent for `project`, or for no project at all. */
+function inProject(request: JobRequest, project?: JobRequest["project"]): JobRequest {
+  const copy = { ...request };
+  delete copy.project;
+  return project ? { ...copy, project } : copy;
+}
 
 /** A stub whose ticks run only when the test fires them. */
 function steppedStub() {
@@ -78,7 +86,16 @@ describe("createStubCompute", () => {
       [6, "job.epoch", { epoch: 1, train_loss: 0.5, val_loss: 0.6 }],
       [7, "job.log", { line: "Epoch 2/2: train loss 0.5, val loss 0.6", progress: false }],
       [8, "job.metric", { epoch: 1, total_epochs: 2, latest_train_loss: 0.5, latest_val_loss: 0.6, best_loss: 0.6 }],
-      [9, "job.result", { model_id: "stub-model-1", model_dir: "derivatives/sleap/models/stub-model-1/" }],
+      [
+        9,
+        "job.result",
+        {
+          model_id: "stub-model-1",
+          model_dir: "ember:000398/stub-model-1",
+          model_path: "derivatives/sleap/models/stub-model-1/",
+          labels_path: LABELS_URL,
+        },
+      ],
       [10, "job.status", { state: "completed" }],
     ]);
     expect(events.every((e) => e.jobId === "stub-1")).toBe(true);
@@ -96,19 +113,33 @@ describe("createStubCompute", () => {
     expect(epochs).toEqual([0, 1, 2]);
   });
 
-  it("refuses a training job sent with inline labels instead of an EMBER project", async () => {
+  it("leaves out the model card id when the job names no dandiset, still saying where and what it trained", async () => {
+    const { stub, drain } = steppedStub();
+    const { jobId } = await stub.submit(inProject(trainRequest(1)));
+    const results: unknown[] = [];
+    stub.subscribe(jobId, (e) => {
+      if (e.topic === "job.result") results.push(e.data);
+    });
+    drain();
+
+    expect(results).toEqual([
+      { model_id: "stub-model-1", model_path: "derivatives/sleap/models/stub-model-1/", labels_path: LABELS_URL },
+    ]);
+  });
+
+  it.each([
+    ["inline labels instead of a saved project", { labels_content: "AAAA" }],
+    ["inline labels beside a saved project", { labels_path: LABELS_URL, labels_content: "AAAA" }],
+  ])("refuses a training job sent with %s, as the proxy would", async (_label, labels) => {
     const { stub, drain } = steppedStub();
     const request = trainRequest();
-    request.spec = { type: "train", config_contents: [], model_types: [], labels_content: "AAAA" };
+    request.spec = { type: "train", config_contents: [], model_types: [], ...labels };
     const { jobId } = await stub.submit(request);
     const events: JobEvent[] = [];
     stub.subscribe(jobId, (e) => events.push(e));
     drain();
 
-    expect(events.length).toBe(1);
-    expect(events[0].topic).toBe("job.status");
-    expect(events[0].data.state).toBe("failed");
-    expect(events[0].data.detail).toMatch(/saved on EMBER \(labels_path\), not from inline labels/);
+    expect(events.map(brief)).toEqual([[1, "job.status", { state: "failed", detail: TRAIN_NEEDS_SAVED_PROJECT }]]);
   });
 
   it("scripts an inference job, naming each input and model", async () => {
@@ -126,9 +157,61 @@ describe("createStubCompute", () => {
       [3, "job.log", { line: "Input: session1.mp4 (mp4)", progress: false }],
       [4, "job.log", { line: "Model: hf:lab/mice", progress: false }],
       [5, "job.log", { line: "Model: ember:000398/models/a", progress: false }],
-      [6, "job.result", { predictions: ["derivatives/sleap/predictions/session1.mp4.predictions.slp"] }],
+      [
+        6,
+        "job.result",
+        { predictions: ["derivatives/sleap/sub-01/ses-02/beh/sub-01_ses-02_desc-predictions_pose.slp"] },
+      ],
       [7, "job.status", { state: "completed" }],
     ]);
+  });
+
+  it.each([
+    ["the project's folders", "sub-01/beh/session1.slp", "session1.mp4", "sub-01/beh/sub-01_desc-predictions_pose.slp"],
+    [
+      "a labels file of the project's",
+      "derivatives/sleap/sub-01/ses-02/beh/sub-01_ses-02_desc-labelsCamTop_pose.slp",
+      "x.mp4",
+      "sub-01/ses-02/beh/sub-01_ses-02_desc-predictions_pose.slp",
+    ],
+    [
+      "the input's name, when the project names no subject",
+      "videos/session1.slp",
+      "sub-03_ses-04_task-reach.mp4",
+      "sub-03/ses-04/beh/sub-03_ses-04_desc-predictions_pose.slp",
+    ],
+    [
+      "the input's name, when there is no project",
+      null,
+      "sub-05_video.mp4",
+      "sub-05/beh/sub-05_desc-predictions_pose.slp",
+    ],
+  ])("places predictions in the BIDS layout, reading the subject from %s", async (_label, path, name, expected) => {
+    const { stub, drain } = steppedStub();
+    const request = { ...trackRequest, inputs: [{ url: VIDEO_URL, fileType: "mp4" as const, name }] };
+    const { jobId } = await stub.submit(inProject(request, path === null ? undefined : { dandisetId: "000398", path }));
+    const results: unknown[] = [];
+    stub.subscribe(jobId, (e) => {
+      if (e.topic === "job.result") results.push(e.data);
+    });
+    drain();
+
+    expect(results).toEqual([{ predictions: [`derivatives/sleap/${expected}`] }]);
+  });
+
+  it.each([
+    ["a project path without a subject", { dandisetId: "000398", path: "videos/session1.slp" }],
+    ["no project", undefined],
+  ])("fails an inference job whose subject it cannot find, given %s", async (_label, project) => {
+    const { stub, drain } = steppedStub();
+    const { jobId } = await stub.submit(inProject(trackRequest, project));
+    const events: JobEvent[] = [];
+    stub.subscribe(jobId, (e) => events.push(e));
+    drain();
+
+    const detail =
+      "Cannot place the predictions for session1.mp4: neither the project's path nor the input's name names its subject (sub-<label>).";
+    expect(events.map(brief)).toEqual([[1, "job.status", { state: "failed", detail }]]);
   });
 
   it("replays history to a late subscriber, then delivers live events to every subscriber", async () => {

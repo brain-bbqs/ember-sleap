@@ -8,6 +8,11 @@ function config(overrides: Partial<ArchiveConfig> = {}): ArchiveConfig {
   return { api: API, web: "https://web.example", accessToken: "tok", dandisetId: "000123", ...overrides };
 }
 
+/** A getConfig answering with the config, as the page's does once a dandiset is listed. */
+function listed(overrides: Partial<ArchiveConfig> = {}): () => Promise<ArchiveConfig> {
+  return () => Promise.resolve(config(overrides));
+}
+
 const LISTING = `${API}/dandisets/000123/versions/draft/assets/?path=${encodeURIComponent(MODELS_PREFIX)}&metadata=false&page_size=1000`;
 
 type Route = (init?: RequestInit) => Response | Promise<Response>;
@@ -37,10 +42,10 @@ describe("createEmberModelSource", () => {
   it("lists nothing while no dandiset is open", async () => {
     const fetch = router({});
     vi.stubGlobal("fetch", fetch);
-    const source = createEmberModelSource({ getConfig: () => null, fetch });
+    const source = createEmberModelSource({ getConfig: () => Promise.resolve(null), fetch });
     expect(source.name).toBe("EMBER");
     expect(await source.list({})).toEqual([]);
-    expect(await createEmberModelSource({ getConfig: () => config({ dandisetId: "" }), fetch }).list({})).toEqual([]);
+    expect(await createEmberModelSource({ getConfig: listed({ dandisetId: "" }), fetch }).list({})).toEqual([]);
     expect(fetch).not.toHaveBeenCalled();
   });
 
@@ -68,7 +73,7 @@ describe("createEmberModelSource", () => {
     });
     vi.stubGlobal("fetch", fetch);
     const signal = new AbortController().signal;
-    const models = await createEmberModelSource({ getConfig: () => config(), fetch }).list({}, signal);
+    const models = await createEmberModelSource({ getConfig: listed(), fetch }).list({}, signal);
     expect(models).toEqual([
       {
         id: "ember:000123/mouse",
@@ -100,7 +105,7 @@ describe("createEmberModelSource", () => {
       [page2]: () => json({ results: [asset("c3", `${MODELS_PREFIX}c/training_config.yaml`)] }),
     });
     vi.stubGlobal("fetch", fetch);
-    const models = await createEmberModelSource({ getConfig: () => config(), fetch }).list({});
+    const models = await createEmberModelSource({ getConfig: listed(), fetch }).list({});
     expect(models.map((m) => [m.id, m.name, m.heads])).toEqual([
       ["ember:000123/a", "a", []],
       ["ember:000123/c", "c", []],
@@ -120,7 +125,7 @@ describe("createEmberModelSource", () => {
         }),
     });
     vi.stubGlobal("fetch", fetch);
-    const models = await createEmberModelSource({ getConfig: () => config(), fetch }).list({});
+    const models = await createEmberModelSource({ getConfig: listed(), fetch }).list({});
     expect(models.map((m) => m.id)).toEqual(["ember:000123/a"]);
     expect(fetch).toHaveBeenCalledTimes(1);
   });
@@ -128,14 +133,14 @@ describe("createEmberModelSource", () => {
   it("gives up on a listing that never ends", async () => {
     const fetch = router({ [LISTING]: () => json({ results: [], next: LISTING }) });
     vi.stubGlobal("fetch", fetch);
-    expect(await createEmberModelSource({ getConfig: () => config(), fetch }).list({})).toEqual([]);
+    expect(await createEmberModelSource({ getConfig: listed(), fetch }).list({})).toEqual([]);
     expect(fetch).toHaveBeenCalledTimes(20);
   });
 
   it("tolerates an empty listing body", async () => {
     const fetch = router({ [LISTING]: () => new Response(null, { status: 204 }) });
     vi.stubGlobal("fetch", fetch);
-    expect(await createEmberModelSource({ getConfig: () => config(), fetch }).list({})).toEqual([]);
+    expect(await createEmberModelSource({ getConfig: listed(), fetch }).list({})).toEqual([]);
   });
 
   it.each([
@@ -155,7 +160,7 @@ describe("createEmberModelSource", () => {
       [`${API}/assets/m1/download/`]: cardRoute,
     });
     vi.stubGlobal("fetch", fetch);
-    const models = await createEmberModelSource({ getConfig: () => config(), fetch }).list({});
+    const models = await createEmberModelSource({ getConfig: listed(), fetch }).list({});
     expect(models).toEqual([
       {
         id: "ember:000123/mouse",
@@ -179,7 +184,7 @@ describe("createEmberModelSource", () => {
         json({ name: "", license: 3, species: "", heads: "centroid", skeleton: {} }),
     });
     vi.stubGlobal("fetch", fetch);
-    const models = await createEmberModelSource({ getConfig: () => config(), fetch }).list({});
+    const models = await createEmberModelSource({ getConfig: listed(), fetch }).list({});
     expect(models[0]).toEqual({
       id: "ember:000123/mouse",
       name: "mouse",
@@ -200,9 +205,23 @@ describe("createEmberModelSource", () => {
       [`${API}/assets/m1/download/`]: () => json({ name: "Mouse" }),
     });
     vi.stubGlobal("fetch", fetch);
-    const models = await createEmberModelSource({ getConfig: () => config({ accessToken: "" }) }).list({});
+    const models = await createEmberModelSource({ getConfig: listed({ accessToken: "" }) }).list({});
     expect(models[0].name).toBe("Mouse");
     expect(fetch).toHaveBeenCalledWith(`${API}/assets/m1/download/`, { headers: {}, signal: undefined });
+  });
+
+  it("asks for the config at every listing, so each one carries the token current then", async () => {
+    const fetch = router({ [LISTING]: () => json({ results: [] }) });
+    vi.stubGlobal("fetch", fetch);
+    const getConfig = vi
+      .fn<() => Promise<ArchiveConfig | null>>()
+      .mockResolvedValueOnce(config({ accessToken: "first" }))
+      .mockResolvedValueOnce(config({ accessToken: "" }));
+    const source = createEmberModelSource({ getConfig, fetch });
+    await source.list({});
+    await source.list({});
+    const sent = fetch.mock.calls.map(([, init]) => new Headers(init?.headers).get("Authorization"));
+    expect(sent).toEqual(["Bearer first", null]);
   });
 
   it("stops listing once aborted", async () => {
@@ -210,9 +229,9 @@ describe("createEmberModelSource", () => {
     controller.abort(new Error("closed"));
     const fetch = router({});
     vi.stubGlobal("fetch", fetch);
-    await expect(
-      createEmberModelSource({ getConfig: () => config(), fetch }).list({}, controller.signal),
-    ).rejects.toThrow("closed");
+    await expect(createEmberModelSource({ getConfig: listed(), fetch }).list({}, controller.signal)).rejects.toThrow(
+      "closed",
+    );
     expect(fetch).not.toHaveBeenCalled();
   });
 });
