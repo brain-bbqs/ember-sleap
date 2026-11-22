@@ -2,6 +2,26 @@
 
 Draft, 2026-11-22. Supersedes the "extension registries" approach in the earlier feasibility report.
 
+**Contents**
+
+- [Summary](#summary)
+- [Decisions so far](#decisions-so-far)
+- [Where upstream is today](#where-upstream-is-today)
+- [Target architecture](#target-architecture)
+- [The component contract](#the-component-contract)
+- [Upstream changes needed](#upstream-changes-needed)
+- [Prototype setup](#prototype-setup)
+- [Validation](#validation)
+- [PR series to upstream](#pr-series-to-upstream)
+- [ember-sleap work (this repository)](#ember-sleap-work-this-repository)
+  - [EMBER storage](#ember-storage)
+  - [BIDS derivatives layout](#bids-derivatives-layout)
+  - [Models](#models)
+  - [Compute](#compute)
+- [Milestones and effort](#milestones-and-effort)
+- [Open questions](#open-questions)
+- [References](#references)
+
 ## Summary
 
 ember-sleap will be a BBQS companion web app that **imports the SLEAP web app as a vendored npm component** and wraps it in our own page. Our page owns EMBER sign-in, opening and saving projects on EMBER, model catalogues, and job submission. The SLEAP app owns labeling, training and inference dialogs, and the job viewer.
