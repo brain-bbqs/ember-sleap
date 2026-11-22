@@ -57,7 +57,7 @@ For reference only, since sleap-nn and the container are handled separately. Fro
                                                   (reads and writes EMBER, pulls weights)
 ```
 
-Everything we build is static and served by GitHub Pages. We run no servers.
+Everything we build is static and served by GitHub Pages. We run no servers dedicated to this app, beyond the other pre-existing services such as EMBER/Pennsieve.
 
 ## The component contract
 
