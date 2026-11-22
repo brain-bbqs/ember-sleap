@@ -286,18 +286,6 @@ M1 to M4 is the end-to-end prototype with stubbed compute (about 5 to 8 weeks). 
 - [ ] **Us:** final hostname (e.g. `sleap.brain-bbqs.org`).
 - [ ] **Us:** a test dandiset for end-to-end save tests.
 
-## Risks
-
-| Risk | Impact | Mitigation |
-| --- | --- | --- |
-| Upstream wants a different contract | Rework of PRs 7 and 8 | Design proposal before writing them; keep 1 to 6 contract-free |
-| Upstream pace (about 3 PRs a day) | Fork branches conflict | Weekly rebase; short stack; land early PRs fast |
-| Style or portal refactors regress the standalone app | PRs rejected | Screenshot tests on every branch |
-| Proxy job API not defined yet | Compute cannot be finished | Build against a stub; agree the API early |
-| Proxy or Pennsieve outage | No training or inference, with no local fallback | Clear job status; labeling, open and save keep working |
-| No BIDS standard for pose | Layout may change; validators may flag `.slp` | Confirm with the EMBER data team; also export NWB with `ndx-pose` |
-| Tokens held in the browser | Script injection could act as the user on EMBER | Strict content security policy; short-lived tokens |
-
 ## References
 
 - [talmolab/sleap-app](https://github.com/talmolab/sleap-app), including its [remote-compute guide](https://github.com/talmolab/sleap-app/blob/main/docs/guides/remote-compute.md) and [deploy workflow](https://github.com/talmolab/sleap-app/blob/main/.github/workflows/deploy.yml)
