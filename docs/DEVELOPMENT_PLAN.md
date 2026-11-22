@@ -6,6 +6,7 @@ Draft, 2026-11-22. Supersedes the "extension registries" approach in the earlier
 
 - [Summary](#summary)
 - [Decisions so far](#decisions-so-far)
+- [Progress in this repository](#progress-in-this-repository)
 - [Where upstream is today](#where-upstream-is-today)
 - [Target architecture](#target-architecture)
 - [The component contract](#the-component-contract)
@@ -38,6 +39,20 @@ Rough effort: about 9 to 15 engineer-weeks for one developer. The end-to-end pro
 - **Pennsieve is the only compute.** Training and inference go through a central proxy to a Pennsieve service account, built by another team. Local and SLEAP Connect compute are switched off in our build.
 - **File URLs are extensionless blobs.** EMBER and proxy URLs are routed blob URLs with no file extension. The file type always travels alongside the URL.
 - **Hosting is GitHub Pages** under a `*.brain-bbqs.org` hostname, per the BBQS app convention (bbqs-uploader is `upload.brain-bbqs.org`). The exact name is still open, e.g. `sleap.brain-bbqs.org`.
+
+## Progress in this repository
+
+Updated 2026-11-22. Nothing upstream has been touched: no fork, no PRs, no proposal issue. Until the component exists, a **stand-in** (`src/ui/sleapStandIn.ts`) mounts through the proposed contract (`src/lib/sleapContract.ts`) and drives every host callback, so the host side is built and tested now. Swapping in the real package is one function, `loadSleapComponent` in `src/ui/sleapComponent.ts`.
+
+| Milestone | ember-sleap part | State |
+| --- | --- | --- |
+| M1 | Scaffold from `bbqs-web-app-template`, with sign-in | Done. Sign-in is wired through `@brain-bbqs/ember-client` but stays off (`OAUTH_CLIENT_ID` is empty) until EMBER registers an OAuth app. Hostname set provisionally to `sleap.brain-bbqs.org` (`public/CNAME`, `preview.yml`). |
+| M3 | Mount the component | Done against the stand-in, with `compute.builtIn: false` and every `pageEffects` off. |
+| M4 | Open and save on EMBER as BIDS derivatives | Open verified live (dandiset 000398: `glob` listing, `/download/` to a presigned S3 link, ranged read of the extensionless URL by declared type). Save runs end to end in Playwright against a routed archive (dandi-etag, multipart upload, asset create or replace, `dataset_description.json` and `.bidsignore` on first save); not yet run against the real archive. |
+| M5 | Model sources | Hugging Face, EMBER `derivatives/sleap/models/` and `models.json` index sources written and unit-tested ([MODEL_INDEX.md](MODEL_INDEX.md)). Not live: Hugging Face is unreachable from the build sandbox, and the index dandiset does not exist (`MODEL_INDEX_URL` is null). |
+| M6 | Compute | Proxy client written against a drafted API ([COMPUTE_API.md](COMPUTE_API.md)); jobs run on an in-browser stub emitting upstream's `job.*` events until `COMPUTE_PROXY_URL` is set. |
+
+Validation checklist items covered so far, against the stand-in (see [Validation](#validation)): mounting without changing our header, rendering inside the app's box, Ctrl+S only inside the app, opening an extensionless EMBER link with a declared type, finding a video through `resolveVideo`, saving under `derivatives/sleap/`, the unsaved-work check on sign-out, jobs through the host with status and logs, no built-in compute, and everything loading from our own host. They need re-running once the real component mounts, since upstream's menus, dialogs and workers are what the isolation checks are really about.
 
 ## Where upstream is today
 
@@ -303,8 +318,13 @@ M1 to M4 is the end-to-end prototype with stubbed compute (about 5 to 8 weeks). 
 - [ ] **EMBER admins:** register a public OAuth app for ember-sleap with every serving URL as a redirect URI, including PR previews.
 - [ ] **EMBER data team:** approve the `derivatives/sleap/` layout; confirm drafts holding `.slp` and `.ckpt` files can be published.
 - [ ] **Proxy team:** caller auth, job API, file-type metadata on input URLs, result locations, who finishes the SLEAP Pennsieve app.
-- [ ] **Us:** final hostname (e.g. `sleap.brain-bbqs.org`).
+- [ ] **Us:** final hostname (e.g. `sleap.brain-bbqs.org`). The prototype uses `sleap.brain-bbqs.org` in `public/CNAME` and `preview.yml`; DNS must point there before the first deploy to `main`.
 - [ ] **Us:** a test dandiset for end-to-end save tests.
+- [ ] **EMBER data team:** does the archive accept a dotfile asset (`derivatives/sleap/.bidsignore`)? The page writes it on first save and only warns if it is refused.
+- [ ] **Us / proxy team:** presigned links last 6 hours and a queued job can outlive them; send the stable `/download/` URL (or asset id) beside each input so the worker can renew it.
+- [ ] **Us:** opening an embargoed asset follows `/download/` with the user's token and relies on the browser dropping `Authorization` on the cross-origin redirect to S3; verify with a real embargoed dandiset.
+- [ ] **Us:** an index entry and the same Hugging Face repo listed directly both appear in the model list; decide whether to collapse them.
+- [ ] **Us:** the archive upload sequence is now copied in two apps (bbqs-uploader and here, `src/lib/emberUpload.ts`), which makes it a candidate for `@brain-bbqs/ember-client`.
 
 ## References
 
