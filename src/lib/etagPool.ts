@@ -40,8 +40,13 @@ export interface HashPoolOptions {
  * A few workers, leaving a core for the page: a project of a few hundred MB has only a handful of
  * 64 MB parts to share out, and each worker holds a 16 MB read buffer while it hashes.
  */
-export function poolSize(cores: number): number {
+export function poolSize(cores: number | undefined): number {
   return Math.min(4, Math.max(1, (cores || 2) - 1));
+}
+
+/** The core count, where the runtime says; Node before 21 has no navigator at all. */
+function reportedCores(): number | undefined {
+  return typeof navigator === "undefined" ? undefined : navigator.hardwareConcurrency;
 }
 
 /** A blob being hashed: which of its parts are claimed and done, and the promise's settle hooks. */
@@ -85,7 +90,7 @@ function spawnModuleWorker(): Worker {
  * to start, hashing moves to the main thread, keeping the parts workers already finished.
  */
 export function createHashPool(options: HashPoolOptions = {}): HashPool {
-  const { spawn: spawnWorker = spawnModuleWorker, size = poolSize(navigator.hardwareConcurrency) } = options;
+  const { spawn: spawnWorker = spawnModuleWorker, size = poolSize(reportedCores()) } = options;
   const workers: Worker[] = [];
   const idle: Worker[] = [];
   const inFlight = new Map<number, InFlightPart>();

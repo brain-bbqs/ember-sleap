@@ -197,6 +197,20 @@ describe("poolSize", () => {
   ])("gives %i cores %i workers", (cores, size) => {
     expect(poolSize(cores)).toBe(size);
   });
+
+  it("treats an unknown core count as two", () => {
+    expect(poolSize(undefined)).toBe(1);
+  });
+
+  // Node before 21 (the CI runner's Node 20) has no global navigator at all.
+  it("builds a pool where there is no navigator, and still hashes", async () => {
+    vi.stubGlobal("navigator", undefined);
+    vi.stubGlobal("Worker", undefined);
+    pool = createHashPool();
+    const blob = new Blob([new Uint8Array(100)]);
+    const parts = makeParts([100]);
+    expect(await pool.hash(blob, parts, () => {})).toBe(await oracle(blob, parts));
+  });
 });
 
 describe("createHashPool", () => {
