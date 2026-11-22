@@ -53,7 +53,9 @@ test.describe("the embedded SLEAP app", () => {
     await role(page, "train").click();
     await expect(role(page, "job-state")).toHaveText("completed");
     await expect(role(page, "job-log")).toContainText("epoch 2: train loss 0.3333, val loss 0.4");
-    await expect(role(page, "job-log")).toContainText('"model_dir":"derivatives/sleap/models/stub-model-1/"');
+    // model_dir is a model card id a later track job can name; the folder is model_path.
+    await expect(role(page, "job-log")).toContainText('"model_dir":"ember:mock/stub-model-1"');
+    await expect(role(page, "job-log")).toContainText('"model_path":"derivatives/sleap/models/stub-model-1/"');
 
     await role(page, "list-models").click();
     await role(page, "predict").first().click();
