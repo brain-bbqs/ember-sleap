@@ -10,10 +10,14 @@ import {
   isBidsLabel,
   isDerivativePath,
   isLabelsPath,
+  labelsPathPrefix,
   labelsSavePath,
   modelFolderPath,
+  numberedLabelsPath,
   poseFileName,
   posePath,
+  predictionsPath,
+  suggestedEntities,
   type BidsEntities,
   type PoseDescLabel,
   type PoseEntities,
@@ -49,6 +53,8 @@ describe("entitiesFromPath", () => {
     ["sub-01/ses-day-1/sub-01_ses-day1_labels.slp", { sub: "01", ses: "day1" }],
     // A folder that only starts like a session does not name one.
     ["sessions/sub-01_labels.slp", { sub: "01" }],
+    // A folder that names its entities among others, as `dandi organize` names external files' folders.
+    ["sub-01/sub-01_ses-day1_behavior+image/labels.slp", { sub: "01", ses: "day1" }],
     ["derivatives/sleap/sub-01/beh/sub-01_desc-predictions_pose.slp", { sub: "01" }],
     ["labels/train.pkg.slp", null],
     ["derivatives/sleap/models/mice-v1/train.pkg.slp", null],
@@ -62,6 +68,26 @@ describe("entitiesFromPath", () => {
     ["sub-01/ses-/labels.slp", null],
   ])("%s", (path, expected) => {
     expect(entitiesFromPath(path)).toEqual(expected);
+  });
+});
+
+describe("suggestedEntities", () => {
+  it.each<[string, Partial<BidsEntities>]>([
+    ["sub-01/ses-02/beh/labels.slp", { sub: "01", ses: "02" }],
+    // Whatever BIDS would refuse in a label is dropped, so the suggestion is one the page can save to.
+    ["sub-01/ses-day-1/labels.slp", { sub: "01", ses: "day1" }],
+    ["sub-AgedB6-2268/session1.mp4", { sub: "AgedB62268" }],
+    [
+      "sub-YutaMouse20/sub-YutaMouse20_ses-YutaMouse20-140321_behavior.slp",
+      { sub: "YutaMouse20", ses: "YutaMouse20140321" },
+    ],
+    ["sub-01.slp", { sub: "01" }],
+    // A label with nothing usable in it is no suggestion at all.
+    ["sub-01/ses-/labels.slp", { sub: "01" }],
+    ["sub-_x/labels.slp", {}],
+    ["raw/labels.slp", {}],
+  ])("%s", (path, expected) => {
+    expect(suggestedEntities(path)).toEqual(expected);
   });
 });
 
@@ -148,12 +174,22 @@ describe("labelsSavePath", () => {
       at("sub-01_ses-02_acq-top_desc-labelsTaskABRunXAcqSide_pose.slp"),
     ],
     ["sub-01/sub-01_labels_pose_v2.slp", "x.slp", at("sub-01_ses-02_desc-labelsLabelsPoseV2_pose.slp")],
-    // A source's own desc gives way to the labels file's.
+    // Folders below the subject and session are part of the word, datatype folders aside.
+    ["sub-01/ses-02/camA/labels.slp", "x.slp", at("sub-01_ses-02_desc-labelsCamA_pose.slp")],
+    ["sub-01/ses-02/beh/top-view/day_1.slp", "x.slp", at("sub-01_ses-02_desc-labelsTopViewDay1_pose.slp")],
+    // A source's own desc gives way to the labels file's, keeping what it adds after labels or predictions.
     [
       "derivatives/sleap/sub-01/beh/sub-01_desc-predictions_pose.slp",
       "x.slp",
       at("sub-01_ses-02_desc-labels_pose.slp"),
     ],
+    [
+      "derivatives/sleap/sub-01/beh/sub-01_acq-top_desc-predictionsCamTop_pose.slp",
+      "x.slp",
+      at("sub-01_ses-02_acq-top_desc-labelsCamTop_pose.slp"),
+    ],
+    ["sub-01/sub-01_desc-top_cam.slp", "x.slp", at("sub-01_ses-02_desc-labelsTopCam_pose.slp")],
+    ["sub-01/sub-01_desc-a-b_desc-c.slp", "x.slp", at("sub-01_ses-02_desc-labelsABDescC_pose.slp")],
     [
       "derivatives/sleap/models/mice-v1/train.pkg.slp",
       "train.pkg.slp",
@@ -176,6 +212,8 @@ describe("labelsSavePath", () => {
     ["two cameras of one session", "sub-01/ses-02/cam1.slp", "sub-01/ses-02/cam2.slp"],
     ["two tasks", "sub-01_ses-02_task-a_run-1_beh.slp", "sub-01_ses-02_task-b_run-2_beh.slp"],
     ["two acquisitions", "sub-01_ses-02_acq-top_run-1.pkg.slp", "sub-01_ses-02_acq-side_run-1.pkg.slp"],
+    ["two camera folders", "sub-01/ses-02/camA/labels.slp", "sub-01/ses-02/camB/labels.slp"],
+    ["two descs", "sub-01_ses-02_desc-top_cam.slp", "sub-01_ses-02_desc-side_cam.slp"],
   ])("gives %s their own labels files", (_, first, second) => {
     expect(labelsSavePath(first, "x.slp", entities)).not.toBe(labelsSavePath(second, "x.slp", entities));
   });
@@ -191,6 +229,55 @@ describe("labelsSavePath", () => {
     const first = labelsSavePath("sub-01/ses-02/beh/cam-top.slp", "cam-top.slp", entities);
     expect(isLabelsPath(first)).toBe(true);
     expect(labelsSavePath(first, "cam-top.slp", entities)).toBe(first);
+  });
+});
+
+describe("predictionsPath", () => {
+  it.each<[string, BidsEntities, string]>([
+    [
+      "sub-01/ses-02/beh/cam-top.slp",
+      { sub: "01", ses: "02" },
+      "derivatives/sleap/sub-01/ses-02/beh/sub-01_ses-02_desc-predictionsCamTop_pose.slp",
+    ],
+    [
+      "derivatives/sleap/sub-01/beh/sub-01_acq-top_desc-labelsCamTop_pose.pkg.slp",
+      { sub: "01" },
+      "derivatives/sleap/sub-01/beh/sub-01_acq-top_desc-predictionsCamTop_pose.slp",
+    ],
+    // A video input's extension is not part of the word.
+    [
+      "sub-01_ses-02_task-reach_cam.mp4",
+      { sub: "01", ses: "02" },
+      "derivatives/sleap/sub-01/ses-02/beh/sub-01_ses-02_task-reach_desc-predictionsCam_pose.slp",
+    ],
+  ])("%s", (source, entities, expected) => {
+    expect(predictionsPath(source, entities)).toBe(expected);
+  });
+
+  it.each(["sub-01/ses-02/beh/cam-top.slp", "sub-01/ses-02/camA/labels.slp", "sub-01_ses-02_acq-top_run-1.pkg.slp"])(
+    "saves proofread predictions for %s to the labels file its own save went to",
+    (source) => {
+      const entities = { sub: "01", ses: "02" };
+      const labels = labelsSavePath(source, "x.slp", entities);
+      const predictions = predictionsPath(source, entities);
+      expect(labelsSavePath(predictions, "x.slp", entitiesFromPath(predictions)!)).toBe(
+        labels.replace(/\.pkg\.slp$/, ".slp"),
+      );
+    },
+  );
+});
+
+describe("numbered labels paths", () => {
+  const target = "derivatives/sleap/sub-01/beh/sub-01_desc-labelsCamTop_pose.pkg.slp";
+
+  it("numbers the desc word, so the alternative is still a labels file", () => {
+    expect(numberedLabelsPath(target, 2)).toBe("derivatives/sleap/sub-01/beh/sub-01_desc-labelsCamTop2_pose.pkg.slp");
+    expect(isLabelsPath(numberedLabelsPath(target, 2))).toBe(true);
+  });
+
+  it("shares a prefix with every alternative", () => {
+    expect(labelsPathPrefix(target)).toBe("derivatives/sleap/sub-01/beh/sub-01_desc-labelsCamTop");
+    expect(numberedLabelsPath(target, 12).startsWith(labelsPathPrefix(target))).toBe(true);
   });
 });
 

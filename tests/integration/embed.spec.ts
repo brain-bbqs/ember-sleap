@@ -62,6 +62,13 @@ test.describe("the embedded SLEAP app", () => {
     await expect(role(page, "job-id")).toHaveText("Job stub-2");
     await expect(role(page, "job-state")).toHaveText("completed");
     await expect(role(page, "job-log")).toContainText("Model: mock:single-instance");
+
+    // The model just trained is listed as EMBER would list its folder, so it can predict too.
+    await expect(role(page, "models")).toContainText("stub-model-1 (trained here on the stub)");
+    await role(page, "predict").last().click();
+    await expect(role(page, "job-id")).toHaveText("Job stub-3");
+    await expect(role(page, "job-state")).toHaveText("completed");
+    await expect(role(page, "job-log")).toContainText("Model: ember:mock/stub-model-1");
   });
 
   test("cancels a running job", async ({ page }) => {

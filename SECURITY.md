@@ -16,7 +16,7 @@ grep -rn "innerHTML\|outerHTML\|insertAdjacentHTML" src/
 
 For every hit, confirm any _dynamic_ (user-supplied, API-returned, file-derived, or otherwise non-literal) string is assigned via `.textContent` (or an `element.value` type property) rather than concatenated into the HTML string itself.
 A fixed, hardcoded template assigned via `innerHTML` is fine; the risk is interpolating untrusted data into HTML source, not the property name.
-This app's own code under `src/` has no `innerHTML` use: the project list, the SLEAP stand-in and the status lines are built from elements and `.textContent`, and the What's New modal is drawn by `@brain-bbqs/ui`'s `initWhatsNew`, which builds `CHANGELOG.md` into DOM nodes and never parses it as markup.
+This app's own code under `src/` has no `innerHTML` use: the project list, the SLEAP stand-in, the dialogs and the status lines are built from elements and `.textContent`, and the What's New modal is drawn by `@brain-bbqs/ui`'s `initWhatsNew`, which builds `CHANGELOG.md` into DOM nodes and never parses it as markup.
 Keep it that way: this is the property that makes accepting client-side credential storage a reasonable call for an app of this shape.
 
 Also keep an eye on:
@@ -68,6 +68,7 @@ There is one named exception: the central Pennsieve compute proxy, at the base U
 - **Storage:** the PKCE verifier and state wait in `sessionStorage` across the redirect; the access and refresh tokens persist in `localStorage` under `ember-sleap.settings.v1`, an accepted trade-off by the checklist above.
 - **Lifetime and refresh:** access tokens live as long as EMBER's OAuth server sets.
   Within 60 seconds of expiry, the next call to EMBER (or to the compute proxy) first refreshes them with the `refresh_token` grant.
+  One refresh runs at a time however many calls are waiting on it, since EMBER rotates refresh tokens, and a tab follows another tab's refresh or sign-out instead of writing its own tokens back over it.
 - **Sign-out:** a best-effort revocation of the access token at EMBER's `/oauth/revoke_token/`, and the stored tokens are cleared.
 
 The `frontend-security` skill under `.claude/skills/` is the triggerable summary of this file; update both together.

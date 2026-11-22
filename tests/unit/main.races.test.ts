@@ -65,9 +65,12 @@ const PROJECTS: Record<string, { asset_id: string; path: string; size: number }[
   ],
   "000333": [{ asset_id: "a3", path: "sub-02/three.slp", size: 1 }],
   "000444": [],
+  "000555": [{ asset_id: "a5", path: "sub-05/five.slp", size: 1 }],
 };
 // What 000333's draft metadata answers with, changed as the tests go.
 let flag333: "unreadable" | "clear" | "flagged" = "unreadable";
+// 000555's flag cannot be read when it is listed; a save's read of it waits for the test.
+let reads555 = 0;
 
 let fetchMock: FetchRouter;
 
@@ -83,6 +86,8 @@ function submitDandiset(value: string): void {
 function draftMetadata(id: string): Response | Promise<Response> {
   if (id === "000111") return holds.until("meta-000111").then(() => jsonResponse({}));
   if (id === "000222") return jsonResponse(FLAGGED);
+  if (id === "000555")
+    return ++reads555 === 1 ? jsonResponse({}, 503) : holds.until("meta-000555").then(() => jsonResponse({}));
   if (id === "000333" && flag333 !== "clear")
     return flag333 === "flagged" ? jsonResponse(FLAGGED) : jsonResponse({}, 503);
   return jsonResponse({});
@@ -180,7 +185,7 @@ describe("listings and opens that resolve out of order", () => {
     projectButton("sub-01/gone.slp").click();
     submitDandiset("000333");
     const listed =
-      "Dandiset 000333: 1 project. Could not check its human-subjects flag: list it again before saving to it.";
+      "Dandiset 000333: 1 project. Could not check its human-subjects flag: each save tries again, and is refused until a check succeeds.";
     await vi.waitFor(() => expect(el("open-status").textContent).toBe(listed));
     expect(el("open-status").classList.contains("err")).toBe(true);
     expect(el("humanSubjectsBanner").hidden).toBe(true);
@@ -247,5 +252,23 @@ describe("a dandiset whose human-subjects flag cannot be read", () => {
     submitDandiset("000333");
     await vi.waitFor(() => expect(el("open-status").classList.contains("err")).toBe(true));
     expect(el("humanSubjectsBanner").hidden).toBe(false);
+  });
+
+  it("leaves the notice to the dandiset listed now when a closed project's save reads its own flag late", async () => {
+    submitDandiset("000555");
+    await vi.waitFor(() => expect(el("open-status").classList.contains("err")).toBe(true));
+    projectButton("sub-05/five.slp").click();
+    await vi.waitFor(() => expect(role("file-probe").textContent).toMatch(/HDF5 signature/));
+    role("save").click();
+    await vi.waitFor(() => expect(holds.waiting("meta-000555")).toBe(true));
+    closeProject();
+    submitDandiset("000222");
+    await vi.waitFor(() => expect(el("open-status").textContent).toBe("Dandiset 000222: 3 projects."));
+    expect(el("humanSubjectsBanner").hidden).toBe(false);
+
+    holds.release("meta-000555");
+    await vi.waitFor(() => expect(el("host-status").textContent).toBe(UNREAD));
+    expect(el("humanSubjectsBanner").hidden).toBe(false);
+    expect(el("humanSubjectsUnconfirmed").hidden).toBe(false);
   });
 });

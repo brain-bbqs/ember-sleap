@@ -32,5 +32,6 @@ Instead:
 - No third-party `<script>` tags or CDN includes in `index.html`; only this app's own bundled module loads at runtime.
 - Keep runtime dependencies minimal (the template ships with none); a compromised dependency is the other realistic path to a token leaking even without a bug in this app's own code.
 - A user's token goes only to the API that issued it, never forwarded to a companion service; a service that needs a lookup does it with its own server-side key.
+  The one named exception is the compute proxy at `COMPUTE_PROXY_URL`, on its job endpoints only, as SECURITY.md's "The compute proxy exception" sets out (dormant while that URL is `null`).
 
 See `SECURITY.md` for the full reasoning and the precedent from the sibling apps.

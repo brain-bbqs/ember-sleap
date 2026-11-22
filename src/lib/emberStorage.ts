@@ -6,13 +6,16 @@ import {
   datasetDescription,
   entitiesFromPath,
   isLabelsPath,
+  labelsPathPrefix,
   labelsSavePath,
+  numberedLabelsPath,
   type BidsEntities,
 } from "./bidsDerivatives";
 import {
   closestAsset,
   findAssetByPath,
   findAssetsByName,
+  findAssetsByPrefix,
   resolveDownloadUrl,
   type ArchiveAsset,
   type ProjectAsset,
@@ -34,13 +37,22 @@ export interface EmberStorage extends ProjectStorage {
   open(dandisetId: string, project: ProjectAsset): Promise<OpenRequest>;
 }
 
+/** What to do when a save's labels file is already there: go over it, save beside it, or stop. */
+export type OverwriteChoice = "replace" | "keep-both" | "cancel";
+
 export interface EmberStorageOptions {
   /** The archive config for a dandiset, with a token freshened for the call about to be made. */
   config: (dandisetId: string) => Promise<ArchiveConfig>;
-  /** Asks the person for a subject (and session) when a source path names none; null cancels. */
+  /**
+   * Asks the person for a subject (and session) when a source path names none, or names one that
+   * is not a BIDS label; null cancels.
+   */
   askEntities: (sourcePath: string) => Promise<BidsEntities | null>;
-  /** Asks before a save replaces labels another project left at `path`; false cancels the save. */
-  confirmOverwrite: (path: string) => Promise<boolean>;
+  /**
+   * Asks what to do when the labels file a save would create already exists: an earlier save of
+   * this project from its source, or another project whose name reads the same.
+   */
+  askOverwrite: (path: string) => Promise<OverwriteChoice>;
   /** Why saving to this dandiset is refused right now (the human-subjects gate), or null. */
   saveRefusal?: (dandisetId: string) => string | null;
   /** Read at save time: the app version is fixed, but the SLEAP component loads on first open. */
@@ -56,11 +68,16 @@ interface Located {
   assetId: string;
 }
 
+/** A message as a sentence, so warnings read one after another. */
+function sentence(text: string): string {
+  return /[.!?]$/.test(text) ? text : `${text}.`;
+}
+
 export function createEmberStorage(options: EmberStorageOptions): EmberStorage {
   const {
     config,
     askEntities,
-    confirmOverwrite,
+    askOverwrite,
     saveRefusal,
     versions,
     onProgress,
@@ -68,7 +85,10 @@ export function createEmberStorage(options: EmberStorageOptions): EmberStorage {
     fetch,
   } = options;
   // Which asset each URL handed to the app came from, so an expired presigned link can be renewed.
+  // A renewed link's old URL stays known, since a caller holding it may ask again later.
   const located = new Map<string, Located>();
+  // Saves run one at a time, so a save's check for an existing labels file sees the one before it.
+  let saving: Promise<unknown> = Promise.resolve();
 
   async function resolve(cfg: ArchiveConfig, asset: ArchiveAsset): Promise<string> {
     const url = await resolveDownloadUrl(cfg, asset.asset_id, fetch);
@@ -98,9 +118,42 @@ export function createEmberStorage(options: EmberStorageOptions): EmberStorage {
       try {
         if (!(await findAssetByPath(cfg, path))) await putAsset(cfg, path, new Blob([content]));
       } catch (e) {
-        onWarning(`Saved, but could not write ${path}: ${e instanceof Error ? e.message : String(e)}`);
+        onWarning(sentence(`Could not write ${path}: ${e instanceof Error ? e.message : String(e)}`));
       }
     }
+  }
+
+  /** The first `desc-labels<word><n>` beside `target` that nothing holds yet, from one listing. */
+  async function besideTarget(cfg: ArchiveConfig, target: string): Promise<string> {
+    const taken = new Set((await findAssetsByPrefix(cfg, labelsPathPrefix(target))).map((a) => a.path));
+    let n = 2;
+    while (taken.has(numberedLabelsPath(target, n))) n++;
+    return numberedLabelsPath(target, n);
+  }
+
+  async function saveNow(file: Blob, name: string, ref?: HostRef): Promise<HostRef> {
+    const source = fromHostRef(ref);
+    if (!source) throw new Error("Only a project opened from EMBER can be saved to EMBER.");
+    const refusal = saveRefusal?.(source.dandisetId);
+    if (refusal) throw new Error(refusal);
+    const cfg = await config(source.dandisetId);
+    if (!cfg.accessToken) throw new Error("Sign in with EMBER to save.");
+
+    let target = source.path;
+    if (!isLabelsPath(source.path)) {
+      const entities = entitiesFromPath(source.path) ?? (await askEntities(source.path));
+      if (!entities) throw new Error("Save cancelled: labels in derivatives/sleap/ are placed by subject and session.");
+      target = labelsSavePath(source.path, name, entities);
+      // Asked before the upload, so a cancelled save sends no bytes.
+      if (await findAssetByPath(cfg, target)) {
+        const choice = await askOverwrite(target);
+        if (choice === "cancel") throw new Error(`Save cancelled: ${target} already holds labels.`);
+        if (choice === "keep-both") target = await besideTarget(cfg, target);
+      }
+    }
+    await putAsset(cfg, target, file, onProgress);
+    await ensureScaffold(cfg);
+    return toHostRef({ dandisetId: source.dandisetId, path: target });
   }
 
   return {
@@ -115,27 +168,10 @@ export function createEmberStorage(options: EmberStorageOptions): EmberStorage {
       };
     },
 
-    async save(file, name, ref) {
-      const source = fromHostRef(ref);
-      if (!source) throw new Error("Only a project opened from EMBER can be saved to EMBER.");
-      const refusal = saveRefusal?.(source.dandisetId);
-      if (refusal) throw new Error(refusal);
-      const cfg = await config(source.dandisetId);
-      if (!cfg.accessToken) throw new Error("Sign in with EMBER to save.");
-
-      let target = source.path;
-      if (!isLabelsPath(source.path)) {
-        const entities = entitiesFromPath(source.path) ?? (await askEntities(source.path));
-        if (!entities)
-          throw new Error("Save cancelled: a subject is needed to place the labels in derivatives/sleap/.");
-        target = labelsSavePath(source.path, name, entities);
-        // Asked before the upload, so a cancelled save sends no bytes.
-        if ((await findAssetByPath(cfg, target)) && !(await confirmOverwrite(target)))
-          throw new Error(`Save cancelled: ${target} already holds other labels.`);
-      }
-      await putAsset(cfg, target, file, onProgress);
-      await ensureScaffold(cfg);
-      return toHostRef({ dandisetId: source.dandisetId, path: target });
+    save(file, name, ref) {
+      const run = saving.then(() => saveNow(file, name, ref));
+      saving = run.catch(() => undefined);
+      return run;
     },
 
     async resolveVideo(storedPath, project) {
@@ -155,7 +191,6 @@ export function createEmberStorage(options: EmberStorageOptions): EmberStorage {
       if (!where) return file;
       const cfg = await config(where.dandisetId);
       const url = await resolve(cfg, { asset_id: where.assetId, path: "", size: 0 });
-      located.delete(file.url);
       return { ...file, url };
     },
   };

@@ -2,7 +2,7 @@ import { TRAIN_NEEDS_SAVED_PROJECT, type ComputeClient, type JobInput, type JobR
 import type { ProjectStorage } from "./emberStorage";
 import { fromHostRef } from "./hostRef";
 import { listModels, type ModelSource } from "./modelCatalogue";
-import type { HostRef, JobSpec, ModelCard, OpenRequest, ResolvedFile, SleapHost } from "./sleapContract";
+import type { HostRef, JobSpec, ModelCard, ModelQuery, OpenRequest, ResolvedFile, SleapHost } from "./sleapContract";
 
 export interface HostDeps {
   storage: ProjectStorage;
@@ -58,6 +58,12 @@ export function createSleapHost({ storage, modelSources, compute, onModelWarning
   const cards = new Map<string, ModelCard>();
   const remember = (file: ResolvedFile) => files.set(file.url, file);
 
+  async function listAll(query: ModelQuery): Promise<ModelCard[]> {
+    const listed = await listModels(modelSources, query, { onWarning: onModelWarning });
+    for (const card of listed) cards.set(card.id, card);
+    return listed;
+  }
+
   return {
     remember,
     save: (file, name, ref) => storage.save(file, name, ref),
@@ -71,13 +77,14 @@ export function createSleapHost({ storage, modelSources, compute, onModelWarning
       remember(fresh);
       return fresh;
     },
-    async listModels(query) {
-      const listed = await listModels(modelSources, query, { onWarning: onModelWarning });
-      for (const card of listed) cards.set(card.id, card);
-      return listed;
-    },
+    listModels: listAll,
     // Async so a refused request rejects the promise rather than throwing at the call site.
-    submitJob: async (spec, project) => compute.submit(buildJobRequest(spec, project, files, cards)),
+    async submitJob(spec, project) {
+      // A model trained since the last listing (upstream names a train result's model_dir in the
+      // inference it runs next) is looked for once more before the job is refused.
+      if (spec.type === "track" && spec.model_paths.some((id) => !cards.has(id))) await listAll({});
+      return compute.submit(buildJobRequest(spec, project, files, cards));
+    },
     subscribeJob: (jobId, onEvent) => compute.subscribe(jobId, onEvent),
     cancelJob: (jobId) => compute.cancel(jobId),
   };

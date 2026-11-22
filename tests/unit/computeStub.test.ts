@@ -160,31 +160,36 @@ describe("createStubCompute", () => {
       [
         6,
         "job.result",
-        { predictions: ["derivatives/sleap/sub-01/ses-02/beh/sub-01_ses-02_desc-predictions_pose.slp"] },
+        { predictions: ["derivatives/sleap/sub-01/ses-02/beh/sub-01_ses-02_desc-predictionsSession1_pose.slp"] },
       ],
       [7, "job.status", { state: "completed" }],
     ]);
   });
 
   it.each([
-    ["the project's folders", "sub-01/beh/session1.slp", "session1.mp4", "sub-01/beh/sub-01_desc-predictions_pose.slp"],
     [
-      "a labels file of the project's",
+      "the project's folders",
+      "sub-01/beh/session1.slp",
+      "session1.mp4",
+      "sub-01/beh/sub-01_desc-predictionsSession1_pose.slp",
+    ],
+    [
+      "a labels file of the project's, as that file's twin",
       "derivatives/sleap/sub-01/ses-02/beh/sub-01_ses-02_desc-labelsCamTop_pose.slp",
       "x.mp4",
-      "sub-01/ses-02/beh/sub-01_ses-02_desc-predictions_pose.slp",
+      "sub-01/ses-02/beh/sub-01_ses-02_desc-predictionsCamTop_pose.slp",
     ],
     [
       "the input's name, when the project names no subject",
       "videos/session1.slp",
       "sub-03_ses-04_task-reach.mp4",
-      "sub-03/ses-04/beh/sub-03_ses-04_desc-predictions_pose.slp",
+      "sub-03/ses-04/beh/sub-03_ses-04_task-reach_desc-predictions_pose.slp",
     ],
     [
       "the input's name, when there is no project",
       null,
       "sub-05_video.mp4",
-      "sub-05/beh/sub-05_desc-predictions_pose.slp",
+      "sub-05/beh/sub-05_desc-predictionsVideo_pose.slp",
     ],
   ])("places predictions in the BIDS layout, reading the subject from %s", async (_label, path, name, expected) => {
     const { stub, drain } = steppedStub();
@@ -199,8 +204,26 @@ describe("createStubCompute", () => {
     expect(results).toEqual([{ predictions: [`derivatives/sleap/${expected}`] }]);
   });
 
+  it("gives two projects of one session their own predictions", async () => {
+    const { stub, drain } = steppedStub();
+    const predictions: unknown[] = [];
+    for (const path of ["sub-01/ses-02/sub-01_ses-02_task-a_proj.slp", "sub-01/ses-02/sub-01_ses-02_task-b_proj.slp"]) {
+      const { jobId } = await stub.submit(inProject(trackRequest, { dandisetId: "000398", path }));
+      stub.subscribe(jobId, (e) => {
+        if (e.topic === "job.result") predictions.push(...(e.data.predictions as unknown[]));
+      });
+    }
+    drain();
+
+    expect(predictions).toEqual([
+      "derivatives/sleap/sub-01/ses-02/beh/sub-01_ses-02_task-a_desc-predictionsProj_pose.slp",
+      "derivatives/sleap/sub-01/ses-02/beh/sub-01_ses-02_task-b_desc-predictionsProj_pose.slp",
+    ]);
+  });
+
   it.each([
     ["a project path without a subject", { dandisetId: "000398", path: "videos/session1.slp" }],
+    ["a project path whose session is not a BIDS label", { dandisetId: "000398", path: "sub-01/ses-day-1/x.slp" }],
     ["no project", undefined],
   ])("fails an inference job whose subject it cannot find, given %s", async (_label, project) => {
     const { stub, drain } = steppedStub();
@@ -210,7 +233,8 @@ describe("createStubCompute", () => {
     drain();
 
     const detail =
-      "Cannot place the predictions for session1.mp4: neither the project's path nor the input's name names its subject (sub-<label>).";
+      "Cannot place the predictions for session1.mp4: neither the project's path nor the input's name gives its " +
+      "subject, and any session it names, as BIDS labels (letters and digits only).";
     expect(events.map(brief)).toEqual([[1, "job.status", { state: "failed", detail }]]);
   });
 
@@ -230,6 +254,51 @@ describe("createStubCompute", () => {
 
     expect(early).toEqual([1, 2, 3, 4]);
     expect(late).toEqual([1, 2, 3, 4]);
+  });
+
+  it("keeps delivering to the other subscribers when one throws, live and in replay", async () => {
+    const { stub, step, drain } = steppedStub();
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { jobId } = await stub.submit(trackRequest);
+    step();
+    const seen: number[] = [];
+    stub.subscribe(jobId, () => {
+      throw new Error("viewer bug");
+    });
+    stub.subscribe(jobId, (e) => seen.push(e.seq));
+    drain();
+
+    expect(seen).toEqual([1, 2, 3, 4, 5, 6, 7]);
+    // Once on replaying seq 1, then once per live event.
+    expect(errors).toHaveBeenCalledTimes(7);
+    expect(errors.mock.calls[0][0]).toBe(`A subscriber to job ${jobId} threw on event 1:`);
+    errors.mockRestore();
+  });
+
+  it("lists each model it trained for a dandiset once its result is in, as the EMBER source would", async () => {
+    const { stub, step, drain } = steppedStub();
+    expect(stub.models.name).toBe("the compute stub");
+    await stub.submit(inProject(trainRequest(1)));
+    drain();
+    const { jobId } = await stub.submit(trainRequest(1));
+    const events: JobEvent[] = [];
+    stub.subscribe(jobId, (e) => events.push(e));
+    while (events.at(-1)?.topic !== "job.metric") step();
+    expect(await stub.models.list({})).toEqual([]);
+
+    step();
+    expect(events.at(-1)?.topic).toBe("job.result");
+    expect(await stub.models.list({})).toEqual([
+      {
+        id: "ember:000398/stub-model-2",
+        name: "stub-model-2 (trained here on the stub)",
+        heads: ["single_instance"],
+        files: [
+          { role: "config", url: "ember://000398/derivatives/sleap/models/stub-model-2/training_config.yaml" },
+          { role: "checkpoint", url: "ember://000398/derivatives/sleap/models/stub-model-2/best.ckpt" },
+        ],
+      },
+    ]);
   });
 
   it("stops delivering to an unsubscribed listener", async () => {

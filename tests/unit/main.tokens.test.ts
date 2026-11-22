@@ -160,6 +160,29 @@ describe("tokens across refreshes, sign-out and other tabs", () => {
     expect(stored()).toEqual({ oauth: fresh(5) });
   });
 
+  it.each<[string, number, { oauth: OAuthTokenSet } | null]>([
+    ["signs out", 7, null],
+    ["refreshes", 8, { oauth: fresh(80) }],
+  ])(
+    "follows another tab that %s before its storage event arrives, instead of writing over it",
+    async (_, n, otherTab) => {
+      otherTabWrites({ oauth: expired(n) });
+      expect(fakes.pending.map((p) => p.from)).toEqual([expired(n)]);
+      if (otherTab) localStorage.setItem(STORAGE_KEY, JSON.stringify(otherTab));
+      else localStorage.removeItem(STORAGE_KEY);
+
+      answer(expired(n), fresh(n));
+      await vi.waitFor(() => expect(fakes.oauth.revokeToken).toHaveBeenLastCalledWith(fresh(n)));
+      expect(stored()).toEqual(otherTab);
+      expect(el("oauthSignedIn").hidden).toBe(!otherTab);
+
+      // The other tab's event, arriving late, changes nothing more.
+      window.dispatchEvent(new StorageEvent("storage", { key: STORAGE_KEY }));
+      await settle();
+      expect(stored()).toEqual(otherTab);
+    },
+  );
+
   it("keeps the old token when a refresh fails, and tries again on the next call", async () => {
     otherTabWrites({ oauth: expired(6) });
     answer(expired(6), new Error("invalid_grant"));

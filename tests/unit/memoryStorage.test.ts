@@ -28,6 +28,16 @@ describe("createMemoryStorage", () => {
     expect(ref.key).toBe("ember:mock:derivatives/sleap/sub-mock/beh/sub-mock_desc-labelsTrain_pose.pkg.slp");
   });
 
+  it("takes the suggested subject and session where EMBER storage would ask", async () => {
+    const storage = createMemoryStorage();
+    const ref = await storage.save(
+      new Blob([]),
+      "labels.slp",
+      toHostRef({ dandisetId: "mock", path: "sub-07/ses-day-1/labels.slp" }),
+    );
+    expect(ref.key).toBe("ember:mock:derivatives/sleap/sub-07/ses-day1/beh/sub-07_ses-day1_desc-labels_pose.slp");
+  });
+
   it("saves the next time back over the labels file the first save made", async () => {
     const storage = createMemoryStorage();
     const first = await storage.save(

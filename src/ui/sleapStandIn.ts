@@ -95,12 +95,17 @@ function describeEvent(event: JobEvent): string | null {
 export function mountStandIn(el: HTMLElement, options: MountOptions): SleapAppHandle {
   const { host = {}, pageEffects = {}, compute } = options;
   let file: OpenRequest | null = null;
-  let ref: HostRef | undefined;
   let dirty = false;
   let stopJob: (() => void) | null = null;
   let jobId: string | null = null;
   // Bumped by every open(), so work that outlives the project it started for leaves the next one alone.
   let opened = 0;
+  // Each opened project's ref, by the open that opened it: a save updates its own project's, even
+  // once another project is open, so a save queued behind it sends the ref it returned.
+  const refs = new Map<number, HostRef | undefined>();
+  const currentRef = () => refs.get(opened);
+  // Saves run one after another, so a second press sends the ref the first one's save returned.
+  let saving: Promise<void> = Promise.resolve();
 
   const root = h("div", "sleap-app sleap-standin");
   root.tabIndex = -1;
@@ -206,28 +211,32 @@ export function mountStandIn(el: HTMLElement, options: MountOptions): SleapAppHa
     return response.blob();
   }
 
-  async function save(): Promise<void> {
-    if (!file) return say(saveStatus, "Open a project before saving.", "err");
-    if (!host.save) return say(saveStatus, "This page does not offer saving.", "err");
-    const project = file;
-    const from = ref;
-    const generation = opened;
+  /** Saves the project open when Save was pressed; requestSave has checked that the host saves. */
+  async function save(pressed: OpenRequest, generation: number): Promise<void> {
     const isCurrent = () => opened === generation;
-    say(saveStatus, "Saving…");
+    // By its latest link while it is still open, since an earlier save may have renewed it.
+    const project = isCurrent() && file ? file : pressed;
     try {
       // The real app serializes its edited labels; the stand-in has no edits of its own to write,
       // so it sends the project's bytes back unchanged through the same callback.
       const blob = await readProject(project, isCurrent);
-      const saved = await host.save(blob, project.name, from);
-      // The host's own status line reports where an earlier project's save landed; taking its ref
-      // here would point the project now open at that project's file.
+      const saved = await host.save!(blob, project.name, refs.get(generation));
+      refs.set(generation, saved);
+      // The host's own status line reports where an earlier project's save landed.
       if (!isCurrent()) return;
-      ref = saved;
       setDirty(false);
       say(saveStatus, `Saved ${humanSize(blob.size)}.`, "ok");
     } catch (e) {
       if (isCurrent()) say(saveStatus, `Save failed: ${e instanceof Error ? e.message : String(e)}`, "err");
     }
+  }
+
+  function requestSave(): void {
+    if (!file) return say(saveStatus, "Open a project before saving.", "err");
+    if (!host.save) return say(saveStatus, "This page does not offer saving.", "err");
+    const [pressed, generation] = [file, opened];
+    say(saveStatus, "Saving…");
+    saving = saving.then(() => save(pressed, generation));
   }
 
   function hostCompute(): boolean {
@@ -259,7 +268,7 @@ export function mountStandIn(el: HTMLElement, options: MountOptions): SleapAppHa
   async function submit(spec: TrainJobSpec | TrackJobSpec): Promise<void> {
     say(computeStatus, "Submitting…");
     try {
-      const { jobId: id } = await host.submitJob!(spec, ref);
+      const { jobId: id } = await host.submitJob!(spec, currentRef());
       say(computeStatus, "");
       followJob(id);
     } catch (e) {
@@ -267,30 +276,31 @@ export function mountStandIn(el: HTMLElement, options: MountOptions): SleapAppHa
     }
   }
 
-  function renderModel(card: ModelCard, dataPath: string): HTMLLIElement {
+  function renderModel(card: ModelCard): HTMLLIElement {
     const item = h("li");
     const facts = [card.heads.join(", "), card.species, card.license].filter(Boolean).join(" · ");
     const predict = button(null, "Predict");
     predict.dataset.role = "predict";
+    // The project open now, by its current link: another may have opened, or the link renewed, since.
     predict.addEventListener("click", () => {
-      if (hostCompute()) void submit({ type: "track", data_path: dataPath, model_paths: [card.id] });
+      if (file && hostCompute()) void submit({ type: "track", data_path: file.url, model_paths: [card.id] });
     });
     item.append(h("strong", null, card.name), h("span", "hint", ` ${facts} `), predict);
     return item;
   }
 
   editBtn.addEventListener("click", () => setDirty(true));
-  saveBtn.addEventListener("click", () => void save());
+  saveBtn.addEventListener("click", requestSave);
   root.addEventListener("keydown", (e) => {
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
       e.preventDefault();
-      void save();
+      requestSave();
     }
   });
   videoFind.addEventListener("click", () => {
     if (!host.resolveVideo) return say(videoResult, "This page does not look videos up.", "err");
     say(videoResult, "Looking…");
-    host.resolveVideo(videoPath.value, ref).then(
+    host.resolveVideo(videoPath.value, currentRef()).then(
       (found) =>
         found
           ? say(videoResult, `Found ${found.name} (${found.fileType}).`, "ok")
@@ -311,13 +321,12 @@ export function mountStandIn(el: HTMLElement, options: MountOptions): SleapAppHa
   });
   modelsBtn.addEventListener("click", () => {
     if (!file || !host.listModels) return;
-    const dataPath = file.url;
     say(computeStatus, "Listing models…");
     models.replaceChildren();
     host.listModels({}).then(
       (cards) => {
         say(computeStatus, cards.length ? "" : "No models found.");
-        models.append(...cards.map((card) => renderModel(card, dataPath)));
+        models.append(...cards.map(renderModel));
       },
       (e: unknown) => say(computeStatus, `Could not list models: ${e instanceof Error ? e.message : String(e)}`, "err"),
     );
@@ -330,7 +339,7 @@ export function mountStandIn(el: HTMLElement, options: MountOptions): SleapAppHa
     async open(request) {
       const generation = ++opened;
       file = request;
-      ref = request.ref;
+      refs.set(generation, request.ref);
       setDirty(false);
       fileName.textContent = request.name;
       fileType.textContent = request.fileType;

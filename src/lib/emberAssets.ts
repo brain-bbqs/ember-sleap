@@ -6,7 +6,7 @@ import {
   type ArchiveConfig,
   type DandisetListItem,
 } from "@brain-bbqs/ember-client";
-import { DERIVATIVES_ROOT, entitiesFromPath, isDerivativePath } from "./bidsDerivatives";
+import { DERIVATIVES_ROOT, isDerivativePath, suggestedEntities } from "./bidsDerivatives";
 import { baseName, fileTypeOfPath, isProjectType } from "./fileType";
 import type { FileType } from "./sleapContract";
 
@@ -77,9 +77,14 @@ export async function listProjects(cfg: ArchiveConfig): Promise<ProjectAsset[]> 
   });
 }
 
+/** Every draft asset whose path starts with `prefix`, which is how the archive's `path` filter matches. */
+export function findAssetsByPrefix(cfg: ArchiveConfig, prefix: string): Promise<ArchiveAsset[]> {
+  return listDraftAssets(cfg, `path=${encodeURIComponent(prefix)}`);
+}
+
 /** The draft asset at exactly `path`, or null. The `path` filter is a prefix match, hence the check. */
 export async function findAssetByPath(cfg: ArchiveConfig, path: string): Promise<ArchiveAsset | null> {
-  const assets = await listDraftAssets(cfg, `path=${encodeURIComponent(path)}`);
+  const assets = await findAssetsByPrefix(cfg, path);
   return assets.find((a) => a.path === path) ?? null;
 }
 
@@ -93,18 +98,13 @@ function folderSegments(path: string): string[] {
   return path.split("/").slice(0, -1);
 }
 
-/** Whether any segment of `path` carries the entity `key-label`, as a folder or in a file name. */
-function namesEntity(path: string, key: "sub" | "ses", label: string): boolean {
-  const entity = new RegExp(`(?:^|_)${key}-${label}(?=_|\\.|$)`);
-  return path.split("/").some((segment) => entity.test(segment));
-}
-
 /**
  * Of several assets sharing a video's file name, the one a project most likely meant: the longest
  * path the stored path ends with (the project kept the layout it was labeled in), else the one of
  * the project's own subject and session, then the one sharing the most leading folders with it.
  * A project in `derivatives/sleap/` is compared as the source tree it mirrors, since raw videos
- * never sit under it. Ties keep listing order.
+ * never sit under it. Subjects and sessions are compared as their letters and digits, since a saved
+ * project's labels are the source's with anything else dropped. Ties keep listing order.
  */
 export function closestAsset<T extends { path: string }>(candidates: T[], projectPath: string, storedPath: string): T {
   const stored = storedPath.replace(/\\/g, "/");
@@ -114,10 +114,12 @@ export function closestAsset<T extends { path: string }>(candidates: T[], projec
   }
   const mirrored = isDerivativePath(projectPath) ? projectPath.slice(DERIVATIVES_ROOT.length + 1) : projectPath;
   const project = folderSegments(mirrored);
-  const entities = entitiesFromPath(mirrored);
+  const same = (a?: string, b?: string) => !!a && a.toLowerCase() === b?.toLowerCase();
+  const want = suggestedEntities(mirrored);
   const kin = (c: T) => {
-    if (!entities || !namesEntity(c.path, "sub", entities.sub)) return 0;
-    return entities.ses && namesEntity(c.path, "ses", entities.ses) ? 2 : 1;
+    const have = suggestedEntities(c.path);
+    if (!same(want.sub, have.sub)) return 0;
+    return same(want.ses, have.ses) ? 2 : 1;
   };
   const shared = (c: T) => {
     const folders = folderSegments(c.path);

@@ -96,6 +96,15 @@ export function createHuggingFaceSource({
   maxPages = 4,
 }: HuggingFaceSourceOptions = {}): ModelSource {
   const hub = hubUrl.replace(/\/+$/, "");
+
+  async function readPage(url: string, signal?: AbortSignal): Promise<{ listing: unknown[]; next: string | null }> {
+    const response = await fetchImpl(url, { signal });
+    if (!response.ok) throw new Error(`Hugging Face returned HTTP ${response.status}.`);
+    const listing: unknown = await response.json();
+    if (!Array.isArray(listing)) throw new Error("Hugging Face returned something other than a model list.");
+    return { listing, next: nextPageUrl(response.headers.get("Link"), hub) };
+  }
+
   return {
     name: "Hugging Face",
     // Listed by tag alone: the Hub's own `search` matches repo ids only, so a species search would
@@ -105,15 +114,20 @@ export function createHuggingFaceSource({
       let url: string | null = `${hub}/api/models?${params.toString()}`;
       const cards: ModelCard[] = [];
       for (let page = 0; url && page < maxPages; page++) {
-        const response = await fetchImpl(url, { signal });
-        if (!response.ok) throw new Error(`Hugging Face returned HTTP ${response.status}.`);
-        const listing: unknown = await response.json();
-        if (!Array.isArray(listing)) throw new Error("Hugging Face returned something other than a model list.");
-        for (const model of listing) {
+        let read: Awaited<ReturnType<typeof readPage>>;
+        try {
+          read = await readPage(url, signal);
+        } catch (e) {
+          // Only the first page failing fails the source; a later one keeps what came before it.
+          if (page === 0) throw e;
+          console.warn(`Hugging Face stopped listing after page ${page}:`, e);
+          break;
+        }
+        for (const model of read.listing) {
           const card = mapHubModel(model, hub);
           if (card) cards.push(card);
         }
-        url = nextPageUrl(response.headers.get("Link"), hub);
+        url = read.next;
       }
       return cards;
     },

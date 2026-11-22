@@ -1,5 +1,7 @@
-import { entitiesFromPath, modelFolderPath, posePath } from "./bidsDerivatives";
-import type { JobEvent, TrackJobSpec, TrainJobSpec } from "./sleapContract";
+import { entitiesFromPath, modelFolderPath, predictionsPath } from "./bidsDerivatives";
+import { isModelHead, type ModelSource } from "./modelCatalogue";
+import { emberModelId } from "./modelEmber";
+import type { JobEvent, ModelCard, TrackJobSpec, TrainJobSpec } from "./sleapContract";
 import {
   isTerminalEvent,
   TRAIN_NEEDS_SAVED_PROJECT,
@@ -16,7 +18,15 @@ export interface StubComputeOptions {
   clearTimer?: ClearTimer;
 }
 
-type ScriptedEvent = Pick<JobEvent, "topic" | "data">;
+/** The stub's compute, and the models its training jobs made, as a source for the model picker. */
+export interface StubCompute extends ComputeClient {
+  models: ModelSource;
+}
+
+type ScriptedEvent = Pick<JobEvent, "topic" | "data"> & {
+  /** A trained model's card, listed from the moment its job.result is reported. */
+  trained?: ModelCard;
+};
 
 interface StubJob {
   id: string;
@@ -68,7 +78,11 @@ function trainScript(request: JobRequest, spec: TrainJobSpec, jobNumber: number)
         best_loss: valLoss,
       },
     },
-    { topic: "job.result", data: trainResult(request, spec.labels_path, modelId) },
+    {
+      topic: "job.result",
+      data: trainResult(request, spec.labels_path, modelId),
+      trained: trainedCard(request, spec, modelId),
+    },
     status("completed"),
   );
   return events;
@@ -80,20 +94,44 @@ function trainScript(request: JobRequest, spec: TrainJobSpec, jobNumber: number)
  * Without a dandiset there is no such id, and upstream then skips post-training inference itself.
  */
 function trainResult(request: JobRequest, labelsPath: string, modelId: string): Record<string, unknown> {
-  const modelDir = request.project ? { model_dir: `ember:${request.project.dandisetId}/${modelId}` } : {};
+  const modelDir = request.project ? { model_dir: emberModelId(request.project.dandisetId, modelId) } : {};
   return { model_id: modelId, ...modelDir, model_path: modelFolderPath(modelId), labels_path: labelsPath };
 }
 
+/**
+ * The card the EMBER model source would give the trained model's folder once the proxy has written
+ * it, so a follow-up track job can name `model_dir` here too. The stub writes nothing, so the files
+ * are references a worker would resolve, never fetched in the page.
+ */
+function trainedCard(request: JobRequest, spec: TrainJobSpec, modelId: string): ModelCard | undefined {
+  if (!request.project) return undefined;
+  const folder = `ember://${request.project.dandisetId}/${modelFolderPath(modelId)}`;
+  return {
+    id: emberModelId(request.project.dandisetId, modelId),
+    name: `${modelId} (trained here on the stub)`,
+    heads: spec.model_types.filter(isModelHead),
+    files: [
+      { role: "config", url: `${folder}training_config.yaml` },
+      { role: "checkpoint", url: `${folder}best.ckpt` },
+    ],
+  };
+}
+
 function trackScript(request: JobRequest, spec: TrackJobSpec): ScriptedEvent[] {
-  const fromProject = request.project ? entitiesFromPath(request.project.path) : null;
+  const projectPath = request.project?.path;
+  // Named after the project when it gives the subject, so its predictions sit beside its labels.
+  const named = projectPath && entitiesFromPath(projectPath) ? projectPath : null;
   const predictions: string[] = [];
   for (const input of request.inputs) {
-    const entities = fromProject ?? entitiesFromPath(input.name);
+    const source = named ?? input.name;
+    const entities = entitiesFromPath(source);
     if (!entities) {
-      const why = "neither the project's path nor the input's name names its subject (sub-<label>)";
+      const why =
+        "neither the project's path nor the input's name gives its subject, and any session it names, " +
+        "as BIDS labels (letters and digits only)";
       return [status("failed", `Cannot place the predictions for ${input.name}: ${why}.`)];
     }
-    predictions.push(posePath(entities, "predictions", "slp"));
+    predictions.push(predictionsPath(source, entities));
   }
   return [
     status("queued"),
@@ -114,15 +152,26 @@ export function createStubCompute({
   tickMs = 600,
   setTimer = (callback, ms) => setTimeout(callback, ms),
   clearTimer = (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
-}: StubComputeOptions = {}): ComputeClient {
+}: StubComputeOptions = {}): StubCompute {
   const jobs = new Map<string, StubJob>();
+  const trained: ModelCard[] = [];
   let jobCount = 0;
 
-  function emit(job: StubJob, scripted: ScriptedEvent): void {
+  // A subscriber's bug must not stall the job, as with the proxy client: the others still hear it.
+  function deliver(job: StubJob, listener: (event: JobEvent) => void, event: JobEvent): void {
+    try {
+      listener(event);
+    } catch (error) {
+      console.error(`A subscriber to job ${job.id} threw on event ${event.seq}:`, error);
+    }
+  }
+
+  function emit(job: StubJob, { trained: card, ...scripted }: ScriptedEvent): void {
     const event: JobEvent = { ...scripted, seq: job.history.length + 1, jobId: job.id };
     job.history.push(event);
+    if (card) trained.push(card);
     if (isTerminalEvent(event)) job.finished = true;
-    for (const listener of job.listeners) listener(event);
+    for (const listener of job.listeners) deliver(job, listener, event);
   }
 
   function tick(job: StubJob): void {
@@ -134,6 +183,8 @@ export function createStubCompute({
   }
 
   return {
+    models: { name: "the compute stub", list: () => Promise.resolve([...trained]) },
+
     submit(request) {
       jobCount += 1;
       const spec = request.spec;
@@ -153,7 +204,7 @@ export function createStubCompute({
     subscribe(jobId, onEvent) {
       const job = jobs.get(jobId);
       if (!job) throw new Error(`Unknown job: ${jobId}`);
-      for (const event of job.history) onEvent(event);
+      for (const event of job.history) deliver(job, onEvent, event);
       job.listeners.add(onEvent);
       return () => {
         job.listeners.delete(onEvent);

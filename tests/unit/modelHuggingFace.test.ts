@@ -162,6 +162,21 @@ describe("createHuggingFaceSource", () => {
     expect(fetch).toHaveBeenCalledTimes(fetched);
   });
 
+  it.each([
+    ["an HTTP error", () => new Response("down", { status: 502 })],
+    ["something other than a list", () => Response.json({ error: "x" })],
+  ])("keeps the pages it read when a later one answers with %s", async (_, later) => {
+    const first = pages([hubModel({ id: "lab/a" })], []);
+    const fetch = vi.fn<typeof globalThis.fetch>((input, init) =>
+      String(input).includes("cursor=1") ? Promise.resolve(later()) : first(input, init),
+    );
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const models = await createHuggingFaceSource({ fetch, hubUrl: HUB }).list({});
+    expect(models.map((m) => m.id)).toEqual(["hf:lab/a"]);
+    expect(warn).toHaveBeenCalledWith("Hugging Face stopped listing after page 1:", expect.any(Error));
+    warn.mockRestore();
+  });
+
   it("throws on an HTTP error", async () => {
     await expect(createHuggingFaceSource({ fetch: respond(503, {}) }).list({})).rejects.toThrow(
       "Hugging Face returned HTTP 503.",

@@ -140,6 +140,8 @@ Each event has the same shape sleap-app's job viewer already consumes from SLEAP
 
 - A train result's `model_dir` is the trained model's card id, `ember:<dandisetId>/<model_id>` (the id the page's EMBER model source gives the folder), so sleap-app can name it in a follow-up track job's `model_paths`.
   `model_path` is the same folder relative to the dandiset (`derivatives/sleap/models/<model_id>/`), and `labels_path` echoes the spec's `labels_path`, which sleap-app uses as that track job's `data_path`.
+- A track job naming a card the page has not listed makes the page list models once more before it refuses the job, so the proxy must have written the model folder (with its `training_config.yaml`) to the draft before it reports the train result.
+  The in-browser stub writes nothing, so it lists the models it trained itself, under the same ids.
 - A track result's `predictions` are paths relative to the dandiset, in the layout under [Inputs, models and results](#inputs-models-and-results).
 - `completed`, `failed` and `canceled` are terminal: exactly one of them is the last `job.status` of a job, and nothing follows it.
 - `job.epoch`, `job.curve` and `job.metric` are optional; without them the viewer shows status and logs only.
@@ -155,7 +157,8 @@ Each event has the same shape sleap-app's job viewer already consumes from SLEAP
   - `ember://<dandiset>/<path>`: an EMBER asset named by dandiset and path rather than id, for entries in the central model index; the proxy resolves it through the EMBER API.
 - **Results go back to EMBER** in the source dandiset's draft, under `derivatives/sleap/`, written by the service account:
   - trained models under `derivatives/sleap/models/<model-id>/` (`training_config.yaml`, `best.ckpt`, and a `model_card.json`);
-  - predictions as `derivatives/sleap/sub-<label>/[ses-<label>/]beh/sub-<label>[_ses-<label>]_desc-predictions_pose.slp`, with the subject and session read from `project.path` or, failing that, from the input's name; a job where neither names a subject fails rather than inventing a folder.
+  - predictions as `derivatives/sleap/sub-<label>/[ses-<label>/]beh/sub-<label>[_ses-<label>][_task-…][_acq-…][_run-…][_recording-…]_desc-predictions<Source>_pose.slp`, named the way the page names labels files ([BIDS derivatives layout](DEVELOPMENT_PLAN.md#bids-derivatives-layout); `predictionsPath` in `src/lib/bidsDerivatives.ts`), so each project's predictions sit beside its own labels file and two projects of one session never share one.
+    The subject, session, kept entities and `<Source>` come from `project.path` when it names the subject, else from the input's name; a job where neither gives its subject (and any session it names) as BIDS labels fails rather than inventing a folder.
   - Each result records the requesting EMBER user and the job id in its provenance (for example in the asset metadata's `wasGeneratedBy`).
   - The page never publishes a dandiset; results stay in the draft until the owner publishes.
 

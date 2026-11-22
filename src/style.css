@@ -160,10 +160,10 @@
 }
 
 /* ------------------------------------------------------------------------------------------ */
-/* Asking for a subject */
+/* Asking where a save goes: its subject and session, or beside labels already saved */
 /* ------------------------------------------------------------------------------------------ */
 
-.entities-dialog {
+.page-dialog {
   max-width: min(28rem, calc(100vw - 2rem));
   border: 1px solid var(--border);
   border-radius: 10px;
@@ -171,17 +171,17 @@
   color: var(--text);
 }
 
-.entities-dialog form {
+.page-dialog form {
   display: grid;
   gap: 0.5rem;
 }
 
-.entities-dialog h2 {
+.page-dialog h2 {
   margin: 0;
   font-size: 1.1rem;
 }
 
-.entities-dialog input {
+.page-dialog input {
   font: inherit;
   padding: 0.4rem 0.6rem;
   color: var(--text);
@@ -190,7 +190,12 @@
   border-radius: 6px;
 }
 
-.entities-actions {
+.dialog-path {
+  font-family: var(--mono);
+  overflow-wrap: anywhere;
+}
+
+.dialog-actions {
   display: flex;
   justify-content: flex-end;
   gap: 0.5rem;

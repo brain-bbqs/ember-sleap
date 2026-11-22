@@ -200,18 +200,69 @@ test.describe("EMBER storage", () => {
     expect(archive.created.map((c) => c.path)).not.toContain(predictions);
   });
 
+  for (const [choice, button, landed] of [
+    ["cancel", "#overwrite-cancel", null],
+    ["keep both", "#overwrite-keep", ["POST", "sub-01_ses-02_desc-labels2_pose.slp"]],
+    ["replace", "#overwrite-replace", ["PUT", "sub-01_ses-02_desc-labels_pose.slp"]],
+  ] as const) {
+    test(`asks before going over labels already saved there, and can ${choice}`, async ({ page }) => {
+      const folder = "derivatives/sleap/sub-01/ses-02/beh";
+      const target = `${folder}/sub-01_ses-02_desc-labels_pose.slp`;
+      const archive = await routeArchive(page, [
+        { asset_id: "a1", path: "sub-01/ses-02/labels.slp", size: 64 },
+        { asset_id: "d1", path: target, size: 64 },
+        { asset_id: "d2", path: "derivatives/sleap/dataset_description.json", size: 1 },
+        { asset_id: "d3", path: "derivatives/sleap/.bidsignore", size: 1 },
+      ]);
+      await openProject(page, "sub-01/ses-02/labels.slp");
+      await role(page, "save").click();
+      await expect(page.locator("#overwrite-dialog")).toBeVisible();
+      await expect(page.locator("#overwrite-path")).toHaveText(target);
+      await page.locator(button).click();
+      await expect(page.locator("#overwrite-dialog")).toBeHidden();
+
+      if (landed) {
+        await expect(page.locator("#host-status")).toHaveText(
+          `Saved to the draft of dandiset 000123: ${folder}/${landed[1]}`,
+        );
+        expect(archive.created.map((c) => [c.method, c.path])).toEqual([[landed[0], `${folder}/${landed[1]}`]]);
+      } else {
+        await expect(page.locator("#host-status")).toHaveText(`Save cancelled: ${target} already holds labels.`);
+        await expect(role(page, "save-status")).toHaveText(
+          `Save failed: Save cancelled: ${target} already holds labels.`,
+        );
+        expect(archive.created).toEqual([]);
+        expect(archive.uploads.size).toBe(0);
+      }
+    });
+  }
+
   test("asks for a subject when the project's path names none", async ({ page }) => {
     const archive = await routeArchive(page, [{ asset_id: "a1", path: "raw/labels.slp", size: 64 }]);
     await openProject(page, "raw/labels.slp");
     await role(page, "save").click();
     await expect(page.locator("#entities-dialog")).toBeVisible();
     await expect(page.locator("#entities-source")).toHaveText("raw/labels.slp");
+    await expect(page.locator("#entities-reason")).toHaveText("names no subject.");
     await page.locator("#entities-sub").fill("mouse7");
     await page.locator("#entities-save").click();
     await expect(page.locator("#host-status")).toContainText(
       "derivatives/sleap/sub-mouse7/beh/sub-mouse7_desc-labels_pose.slp",
     );
     expect(archive.created[0].path).toBe("derivatives/sleap/sub-mouse7/beh/sub-mouse7_desc-labels_pose.slp");
+  });
+
+  test("asks for a session the path names in a form BIDS cannot hold, offering it as a label", async ({ page }) => {
+    const archive = await routeArchive(page, [{ asset_id: "a1", path: "sub-01/ses-day-1/labels.slp", size: 64 }]);
+    await openProject(page, "sub-01/ses-day-1/labels.slp");
+    await role(page, "save").click();
+    await expect(page.locator("#entities-dialog-title")).toHaveText("Which subject and session is this?");
+    await expect(page.locator("#entities-sub")).toHaveValue("01");
+    await expect(page.locator("#entities-ses")).toHaveValue("day1");
+    await page.locator("#entities-save").click();
+    const target = "derivatives/sleap/sub-01/ses-day1/beh/sub-01_ses-day1_desc-labels_pose.slp";
+    await expect(page.locator("#host-status")).toContainText(target);
+    expect(archive.created[0].path).toBe(target);
   });
 
   test("finds a project's video in the dandiset by the path the project stored", async ({ page }) => {

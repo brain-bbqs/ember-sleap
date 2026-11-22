@@ -228,20 +228,36 @@
       <button id="whats-new-show-more" class="whats-new-show-more" type="button" hidden>Show more</button>
     </dialog>
 
-    <dialog id="entities-dialog" class="entities-dialog" aria-labelledby="entities-dialog-title">
+    <dialog id="entities-dialog" class="page-dialog" aria-labelledby="entities-dialog-title">
       <form id="entities-form" method="dialog">
         <h2 id="entities-dialog-title">Which subject is this?</h2>
         <p class="hint">
-          Labels are saved under <code>derivatives/sleap/</code> by subject and session, and
-          <span id="entities-source"></span> names neither. Letters and digits only.
+          Labels are saved under <code>derivatives/sleap/</code> by subject and session.
+          <span id="entities-source" class="dialog-path"></span> <span id="entities-reason"></span> Letters and digits
+          only.
         </p>
         <label for="entities-sub">Subject</label>
         <input id="entities-sub" type="text" required pattern="[A-Za-z0-9]+" autocomplete="off" />
-        <label for="entities-ses">Session (optional)</label>
+        <label id="entities-ses-label" for="entities-ses">Session (optional)</label>
         <input id="entities-ses" type="text" pattern="[A-Za-z0-9]+" autocomplete="off" />
-        <div class="entities-actions">
+        <div class="dialog-actions">
           <button type="button" id="entities-cancel">Cancel</button>
           <button type="submit" id="entities-save" class="primary">Save here</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="overwrite-dialog" class="page-dialog" aria-labelledby="overwrite-dialog-title">
+      <form id="overwrite-form" method="dialog">
+        <h2 id="overwrite-dialog-title">Labels are already saved there</h2>
+        <p class="hint">
+          <span id="overwrite-path" class="dialog-path"></span> already holds labels: an earlier save of this project,
+          or another project whose name reads the same. Keep both saves these labels beside them under a numbered name.
+        </p>
+        <div class="dialog-actions">
+          <button type="button" id="overwrite-cancel">Cancel</button>
+          <button type="button" id="overwrite-replace">Replace</button>
+          <button type="submit" id="overwrite-keep" class="primary">Keep both</button>
         </div>
       </form>
     </dialog>

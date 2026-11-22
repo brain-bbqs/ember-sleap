@@ -13,6 +13,11 @@ const FILE_ROLES = new Map<string, ModelFile["role"]>([
   ["best.ckpt", "checkpoint"],
 ]);
 
+/** The card id of the model folder `derivatives/sleap/models/<modelId>/` in a dandiset. */
+export function emberModelId(dandisetId: string, modelId: string): string {
+  return `ember:${dandisetId}/${modelId}`;
+}
+
 export interface EmberModelSourceOptions {
   /** The open dandiset's config with a token fresh for this listing; null, or no dandisetId, when nothing is open. */
   getConfig: () => Promise<ArchiveConfig | null>;
@@ -92,7 +97,7 @@ export function createEmberModelSource({
     const species = typeof card.species === "string" && card.species ? card.species : undefined;
     const skeleton = parseSkeleton(card.skeleton);
     return {
-      id: `ember:${cfg.dandisetId}/${folder.id}`,
+      id: emberModelId(cfg.dandisetId, folder.id),
       name,
       ...(license ? { license } : {}),
       ...(species ? { species } : {}),

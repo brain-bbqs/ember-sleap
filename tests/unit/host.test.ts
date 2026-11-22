@@ -152,6 +152,26 @@ describe("createSleapHost", () => {
     );
   });
 
+  it("lists models once more before refusing a track job on a card it has not listed, such as one just trained", async () => {
+    const cards: ModelCard[] = [];
+    const { host, compute, onModelWarning } = setup(cards);
+    host.remember({ ...VIDEO, ref: project });
+    cards.push(CARD);
+    await host.submitJob(track(), project);
+    expect(onModelWarning).toHaveBeenCalledTimes(1);
+    expect(compute.submit).toHaveBeenCalledWith(
+      expect.objectContaining({ models: [{ id: CARD.id, files: CARD.files }] }),
+    );
+
+    await host.submitJob(track(), project);
+    expect(onModelWarning).toHaveBeenCalledTimes(1);
+
+    const unknown = host.submitJob(track({ model_paths: ["ember:000398/never"] }), project);
+    await expect(unknown).rejects.toThrow("Model ember:000398/never is not in the catalogue this page listed.");
+    expect(onModelWarning).toHaveBeenCalledTimes(2);
+    expect(compute.submit).toHaveBeenCalledTimes(2);
+  });
+
   it("remembers nothing when no video is found", async () => {
     const { host, storage } = setup();
     storage.resolveVideo.mockResolvedValueOnce(null);

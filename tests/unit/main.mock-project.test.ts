@@ -59,6 +59,20 @@ describe("?test&mock_project", () => {
     expect(role("job-log").textContent).toContain("Input: test-injection-mock-project.slp (slp)");
   });
 
+  it("lists the model it trained beside the fixed ones, and predicts with it", async () => {
+    role("list-models").click();
+    const predicts = () => document.querySelectorAll<HTMLButtonElement>('[data-role="predict"]');
+    await vi.waitFor(() => expect(predicts().length).toBe(MOCK_MODELS.length + 1));
+    expect(role("models").textContent).toContain("stub-model-1 (trained here on the stub)");
+    predicts()[MOCK_MODELS.length].click();
+    await vi.waitFor(() => expect(role("job-id").textContent).toBe("Job stub-2"));
+    await vi.waitFor(() => expect(role("job-state").textContent).toBe("completed"), { timeout: 5000 });
+    expect(role("job-log").textContent).toContain("Model: ember:mock/stub-model-1");
+    expect(role("job-log").textContent).toContain(
+      "derivatives/sleap/sub-mock/beh/sub-mock_desc-predictionsTestInjectionMockProject_pose.slp",
+    );
+  });
+
   it("says sign-in is not available yet where the person is looking", () => {
     el("oauthSigninBtn").click();
     expect(el("host-status").textContent).toBe(SIGN_IN_UNAVAILABLE);

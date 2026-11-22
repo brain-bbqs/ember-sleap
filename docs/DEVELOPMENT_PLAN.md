@@ -48,9 +48,9 @@ Updated 2026-11-22. Nothing upstream has been touched: no fork, no PRs, no propo
 | --- | --- | --- |
 | M1 | Scaffold from `bbqs-web-app-template`, with sign-in | Done. Sign-in is wired through `@brain-bbqs/ember-client` but stays off (`OAUTH_CLIENT_ID` is empty) until EMBER registers an OAuth app. Hostname set provisionally to `sleap.brain-bbqs.org` (`public/CNAME`, `preview.yml`). |
 | M3 | Mount the component | Done against the stand-in, with `compute.builtIn: false` and every `pageEffects` off. |
-| M4 | Open and save on EMBER as BIDS derivatives | Open verified live (dandiset 000398: `glob` listing, `/download/` to a presigned S3 link, ranged read of the extensionless URL by declared type). Save runs end to end in Playwright against a routed archive (dandi-etag, multipart upload, asset create or replace, `dataset_description.json` and `.bidsignore` on first save); not yet run against the real archive. |
+| M4 | Open and save on EMBER as BIDS derivatives | Open verified live (dandiset 000398: `glob` listing, `/download/` to a presigned S3 link, ranged read of the extensionless URL by declared type). Save runs end to end in Playwright against a routed archive (dandi-etag, multipart upload, asset create or replace, `dataset_description.json` and `.bidsignore` on first save, one labels file per source project, and a replace / keep both / cancel question when that file exists); not yet run against the real archive. |
 | M5 | Model sources | Hugging Face, EMBER `derivatives/sleap/models/` and `models.json` index sources written and unit-tested ([MODEL_INDEX.md](MODEL_INDEX.md)). Not live: Hugging Face is unreachable from the build sandbox, and the index dandiset does not exist (`MODEL_INDEX_URL` is null). |
-| M6 | Compute | Proxy client written against a drafted API ([COMPUTE_API.md](COMPUTE_API.md)); jobs run on an in-browser stub emitting upstream's `job.*` events until `COMPUTE_PROXY_URL` is set. |
+| M6 | Compute | Proxy client written against a drafted API ([COMPUTE_API.md](COMPUTE_API.md)); jobs run on an in-browser stub emitting upstream's `job.*` events until `COMPUTE_PROXY_URL` is set. A model the stub trains is listed in the picker under the id the EMBER source would give its folder, so inference can name it. |
 
 Validation checklist items covered so far, against the stand-in (see [Validation](#validation)): mounting without changing our header, rendering inside the app's box, Ctrl+S only inside the app, opening an extensionless EMBER link with a declared type, finding a video through `resolveVideo`, saving under `derivatives/sleap/`, the unsaved-work check on sign-out, jobs through the host with status and logs, no built-in compute, and everything loading from our own host. They need re-running once the real component mounts, since upstream's menus, dialogs and workers are what the isolation checks are really about.
 
@@ -264,14 +264,20 @@ No BIDS extension exists for pose estimation; BIDS reviewers treat pose annotati
 derivatives/sleap/
   dataset_description.json      DatasetType "derivative"; GeneratedBy: ember-sleap + sleap-app versions; SourceDatasets: this dandiset
   .bidsignore                   lists *.slp, *.ckpt, models/
-  sub-<label>/ses-<label>/beh/
-    sub-<label>_ses-<label>_desc-labels_pose.slp
-    sub-<label>_ses-<label>_desc-predictions_pose.slp
-    sub-<label>_ses-<label>_desc-predictions_pose.nwb     ndx-pose export
+  sub-<label>/[ses-<label>/]beh/
+    sub-<label>[_ses-<label>][_task-<label>][_acq-<label>][_run-<index>][_recording-<label>]_desc-labels<Source>_pose.slp
+    sub-<label>[_ses-<label>][...]_desc-predictions<Source>_pose.slp
+    sub-<label>[_ses-<label>][...]_desc-predictions<Source>_pose.nwb     ndx-pose export
   models/<model-id>/            training_config.yaml, best.ckpt, model card
 ```
 
-The `_pose` suffix is not an official BIDS suffix; `.bidsignore` keeps validators quiet. The page writes `dataset_description.json` on first save, derives `sub-` and `ses-` from the source video's path, and asks when it cannot.
+The `_pose` suffix is not an official BIDS suffix; `.bidsignore` keeps validators quiet. The page writes `dataset_description.json` and `.bidsignore` on the first save into a dandiset.
+
+Each source project gets its own labels file, so two projects of one session never share one. The file keeps the source name's `task`, `acq`, `run` and `recording` entities, and `<Source>` is one CamelCase word made of the source's folders below its subject and session (datatype folders such as `beh` aside), what its own `desc` adds after `labels` or `predictions`, and the rest of its name, minus a trailing `pose` or `labels`. So `sub-01/ses-01/beh/cam-top.slp` saves to `derivatives/sleap/sub-01/ses-01/beh/sub-01_ses-01_desc-labelsCamTop_pose.slp`. Inference writes `desc-predictions<Source>` beside it, and proofreading those predictions saves back to the same labels file.
+
+A labels file already in `derivatives/sleap/` is saved back over itself. Any other source, a predictions file included, is never written over: it gets a labels file of its own. When that file already exists (an earlier save of the same source, or another source whose name reads the same), the page asks whether to replace it, keep both (the new labels go beside it as `desc-labels<Source>2`, the first free number), or cancel.
+
+The page reads `sub-` and `ses-` from the source's folders (including a folder such as `sub-01_ses-day1_behavior+image/`) or its file name. It asks for them when it cannot read a subject that is a BIDS label (letters and digits only), or when the path names a session it cannot read one for, so `ses-day-1` is asked about rather than dropped. The dialog offers the path's own labels, with everything else removed, as the answer to check.
 
 ### Models
 
@@ -279,7 +285,7 @@ The `_pose` suffix is not an official BIDS suffix; `.bidsignore` keeps validator
 
 | Source | How models are found | Login |
 | --- | --- | --- |
-| Hugging Face | Hub search for repos tagged `sleap-nn`, each holding a model folder plus a model card | None for public repos; Hugging Face sign-in for gated ones |
+| Hugging Face | Hub listing of repos tagged `sleap-nn` (up to four pages), each holding a model folder plus a model card; the picker's text is matched in the page | None for public repos; Hugging Face sign-in for gated ones |
 | EMBER files | `derivatives/sleap/models/<id>/` in dandisets the user can read | EMBER, for embargoed data |
 | Central index | A designated EMBER dandiset holding `models.json`; each entry points to a Hugging Face repo or EMBER path with version, checksum, skeleton and license | None |
 
@@ -325,6 +331,7 @@ M1 to M4 is the end-to-end prototype with stubbed compute (about 5 to 8 weeks). 
 - [ ] **Us:** opening an embargoed asset follows `/download/` with the user's token and relies on the browser dropping `Authorization` on the cross-origin redirect to S3; verify with a real embargoed dandiset.
 - [ ] **Us:** an index entry and the same Hugging Face repo listed directly both appear in the model list; decide whether to collapse them.
 - [ ] **Us:** the archive upload sequence is now copied in two apps (bbqs-uploader and here, `src/lib/emberUpload.ts`), which makes it a candidate for `@brain-bbqs/ember-client`.
+- [ ] **Us:** `src/main.ts` refreshes tokens once however many calls need it, follows another tab's refresh or sign-out, and writes each stored setting without touching the others; sibling apps need the same, so these are candidates for `@brain-bbqs/ember-client`. A human-subjects flag that could not be read is kept apart from an unflagged one here; `createHumanSubjectsGate` in `@brain-bbqs/ui` could grow an "unknown" state for it.
 
 ## References
 

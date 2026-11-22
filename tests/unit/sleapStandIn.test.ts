@@ -281,6 +281,29 @@ describe("mountStandIn", () => {
       expect(submitJob).toHaveBeenCalledWith(expect.objectContaining({ labels_path: FRESH_URL }), SAVED);
     });
 
+    it("runs a second press after the first, with the ref and the link the first one left", async () => {
+      const first = deferred<HostRef>();
+      const save = vi.fn<NonNullable<SleapHost["save"]>>().mockReturnValueOnce(first.promise).mockResolvedValue(SAVED);
+      const refreshUrl = vi.fn<NonNullable<SleapHost["refreshUrl"]>>((file) =>
+        Promise.resolve({ ...file, url: FRESH_URL }),
+      );
+      const app = mount({ host: { save, refreshUrl } });
+      await app.open({ ...FILE, ref: REF });
+      serve({ [FILE.url]: expired, [FRESH_URL]: () => bytesResponse([1, 2, 3], 200) });
+
+      q(container, "save").click();
+      q(container, "save").click();
+      await vi.waitFor(() => expect(save).toHaveBeenCalledTimes(1));
+      await flush();
+      expect(save).toHaveBeenCalledTimes(1);
+
+      first.resolve(SAVED);
+      await vi.waitFor(() => expect(save).toHaveBeenCalledTimes(2));
+      expect(save.mock.calls.map((c) => c[2])).toEqual([REF, SAVED]);
+      expect(refreshUrl).toHaveBeenCalledTimes(1);
+      expect(fetchMock.mock.calls.map((c) => String(c[0]))).toEqual([FILE.url, FILE.url, FRESH_URL, FRESH_URL]);
+    });
+
     // The fresh link is refused too, so a refresh never rescues a read in these cases.
     it.each([
       { what: "an expired link the host cannot refresh", canRefresh: false, status: 403, refreshes: 0 },
@@ -566,6 +589,22 @@ describe("mountStandIn", () => {
       q<HTMLSelectElement>(container, "backend").value = "local";
       q(container, "predict").click();
       expect(host.submitJob).toHaveBeenCalledTimes(1);
+    });
+
+    it("predicts on the project open when Predict is pressed, not the one the list was made for", async () => {
+      const { host } = computeHost();
+      const app = mount({ host });
+      await app.open({ ...FILE, ref: REF });
+      q(container, "list-models").click();
+      await vi.waitFor(() => expect(container.querySelectorAll('[data-role="predict"]').length).toBe(1));
+
+      await app.open(OTHER);
+      q(container, "predict").click();
+      await vi.waitFor(() => expect(host.submitJob).toHaveBeenCalled());
+      expect(host.submitJob).toHaveBeenCalledWith(
+        { type: "track", data_path: OTHER.url, model_paths: ["hf:lab/mouse"] },
+        OTHER_REF,
+      );
     });
 
     it.each([

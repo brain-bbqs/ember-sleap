@@ -6,6 +6,7 @@ import {
   fetchDandiset,
   findAssetByPath,
   findAssetsByName,
+  findAssetsByPrefix,
   listOwnDandisets,
   listProjects,
   resolveDownloadUrl,
@@ -148,6 +149,18 @@ describe("findAssetByPath", () => {
   });
 });
 
+describe("findAssetsByPrefix", () => {
+  it("lists every asset the archive's prefix filter matches", async () => {
+    const prefix = "derivatives/sleap/sub-01/beh/sub-01_desc-labelsCam";
+    const results = [
+      { asset_id: "1", path: `${prefix}_pose.slp`, size: 1 },
+      { asset_id: "2", path: `${prefix}2_pose.slp`, size: 1 },
+    ];
+    stubApi({ [assetsPath(`path=${encodeURIComponent(prefix)}`)]: { results } });
+    expect(await findAssetsByPrefix(cfg(), prefix)).toEqual(results);
+  });
+});
+
 describe("findAssetsByName", () => {
   it("keeps only assets whose file name is exactly the one asked for", async () => {
     stubApi({
@@ -228,6 +241,27 @@ describe("closestAsset", () => {
       "derivatives/sleap/sub-02/ses-02/beh/sub-02_ses-02_desc-labels_pose.slp",
       "/lab/session1.mp4",
       "sub-02/ses-09/session1.mp4",
+    ],
+    [
+      "its subject reads as the saved project's once what a BIDS label cannot hold is dropped",
+      ["sub-AgedB6-1111/session1.mp4", "sub-AgedB6-2268/session1.mp4"],
+      "derivatives/sleap/sub-AgedB62268/beh/sub-AgedB62268_desc-labels_pose.slp",
+      "/lab/session1.mp4",
+      "sub-AgedB6-2268/session1.mp4",
+    ],
+    [
+      "its session does, too",
+      ["sub-01/ses-day-1/session1.mp4", "sub-01/ses-day-2/session1.mp4"],
+      "derivatives/sleap/sub-01/ses-day2/beh/sub-01_ses-day2_desc-labels_pose.slp",
+      "/lab/session1.mp4",
+      "sub-01/ses-day-2/session1.mp4",
+    ],
+    [
+      "a raw project names the same hyphenated session",
+      ["sub-01/ses-day-1/a/session1.mp4", "sub-01/ses-day-2/b/session1.mp4"],
+      "elsewhere/sub-01_ses-day-2_labels.slp",
+      "/lab/session1.mp4",
+      "sub-01/ses-day-2/b/session1.mp4",
     ],
   ])("picks the one where %s", (_, paths, project, stored, expected) => {
     expect(

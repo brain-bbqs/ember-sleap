@@ -18,7 +18,7 @@ const fakes = vi.hoisted(() => {
     ensureFreshToken: vi.fn(() => Promise.resolve(refreshed)),
     revokeToken: vi.fn(() => Promise.resolve()),
   };
-  const warning = "Saved, but could not write derivatives/sleap/.bidsignore";
+  const warning = "Could not write derivatives/sleap/.bidsignore: HTTP 400.";
   return { signedIn, refreshed, oauth, warning, storageOptions: null as EmberStorageOptions | null };
 });
 
@@ -155,15 +155,15 @@ describe("main.ts once sign-in, compute and the model index are configured", () 
   });
 
   it.each([
-    [true, true],
-    [false, false],
-  ])("asks before replacing another project's labels (answered %s)", async (answer, replaced) => {
-    const confirm = vi.spyOn(window, "confirm").mockReturnValue(answer);
-    expect(await fakes.storageOptions!.confirmOverwrite("derivatives/sleap/sub-01/beh/x.slp")).toBe(replaced);
-    expect(confirm).toHaveBeenCalledWith(
-      "derivatives/sleap/sub-01/beh/x.slp already holds labels from another project. Replace them?",
-    );
-    confirm.mockRestore();
+    ["overwrite-replace", "replace"],
+    ["overwrite-keep", "keep-both"],
+    ["overwrite-cancel", "cancel"],
+  ])("asks in the page's own dialog what to do with labels already saved (%s)", async (button, choice) => {
+    const asked = fakes.storageOptions!.askOverwrite("derivatives/sleap/sub-01/beh/x.slp");
+    expect(el<HTMLDialogElement>("overwrite-dialog").open).toBe(true);
+    expect(el("overwrite-path").textContent).toBe("derivatives/sleap/sub-01/beh/x.slp");
+    el(button).click();
+    expect(await asked).toBe(choice);
   });
 
   it("lists models from every source, reporting the ones that fail", async () => {

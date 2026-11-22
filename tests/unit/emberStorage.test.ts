@@ -1,19 +1,32 @@
 import { EMBER_INSTANCE, type ArchiveConfig } from "@brain-bbqs/ember-client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { BIDSIGNORE, BIDSIGNORE_PATH, DATASET_DESCRIPTION_PATH } from "../../src/lib/bidsDerivatives";
-import { findAssetByPath, findAssetsByName, resolveDownloadUrl, type ProjectAsset } from "../../src/lib/emberAssets";
-import { createEmberStorage, type EmberStorageOptions } from "../../src/lib/emberStorage";
+import {
+  findAssetByPath,
+  findAssetsByName,
+  findAssetsByPrefix,
+  resolveDownloadUrl,
+  type ProjectAsset,
+} from "../../src/lib/emberAssets";
+import { createEmberStorage, type EmberStorageOptions, type OverwriteChoice } from "../../src/lib/emberStorage";
 import { putAsset } from "../../src/lib/emberUpload";
 import { toHostRef } from "../../src/lib/hostRef";
 
 vi.mock("../../src/lib/emberAssets", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../src/lib/emberAssets")>();
-  return { ...actual, findAssetByPath: vi.fn(), findAssetsByName: vi.fn(), resolveDownloadUrl: vi.fn() };
+  return {
+    ...actual,
+    findAssetByPath: vi.fn(),
+    findAssetsByName: vi.fn(),
+    findAssetsByPrefix: vi.fn(),
+    resolveDownloadUrl: vi.fn(),
+  };
 });
 vi.mock("../../src/lib/emberUpload", () => ({ putAsset: vi.fn() }));
 
 const findByPath = vi.mocked(findAssetByPath);
 const findByName = vi.mocked(findAssetsByName);
+const findByPrefix = vi.mocked(findAssetsByPrefix);
 const resolveUrl = vi.mocked(resolveDownloadUrl);
 const put = vi.mocked(putAsset);
 
@@ -28,7 +41,7 @@ function setup(overrides: Partial<EmberStorageOptions> = {}) {
   const options = {
     config: vi.fn((id: string) => Promise.resolve(cfgFor(id))),
     askEntities: vi.fn(() => Promise.resolve(null)),
-    confirmOverwrite: vi.fn(() => Promise.resolve(true)),
+    askOverwrite: vi.fn((): Promise<OverwriteChoice> => Promise.resolve("replace")),
     versions: () => ({ app: "0.1.0", sleap: "0.0.0-stand-in" }),
     onProgress: vi.fn(),
     onWarning: vi.fn(),
@@ -39,17 +52,23 @@ function setup(overrides: Partial<EmberStorageOptions> = {}) {
 }
 
 const ref = (path: string, dandisetId = "000398") => toHostRef({ dandisetId, path });
+const numbered = (path: string, n: number) => path.replace("_pose.", `${n}_pose.`);
 const file = new Blob(["labels"]);
 /** The draft's asset paths: the derivative dataset's files to begin with, then whatever is put. */
 let draft: Set<string>;
 
 beforeEach(() => {
-  for (const mock of [findByPath, findByName, resolveUrl, put]) mock.mockReset();
+  for (const mock of [findByPath, findByName, findByPrefix, resolveUrl, put]) mock.mockReset();
   let n = 0;
   resolveUrl.mockImplementation((_, assetId) => Promise.resolve(`https://s3.test/${assetId}?sig=${++n}`));
   draft = new Set([DATASET_DESCRIPTION_PATH, BIDSIGNORE_PATH]);
   findByPath.mockImplementation((_, path) =>
     Promise.resolve(draft.has(path) ? { asset_id: "present", path, size: 1 } : null),
+  );
+  findByPrefix.mockImplementation((_, prefix) =>
+    Promise.resolve(
+      [...draft].filter((p) => p.startsWith(prefix)).map((path) => ({ asset_id: "present", path, size: 1 })),
+    ),
   );
   put.mockImplementation((_, path) => {
     draft.add(path);
@@ -107,7 +126,7 @@ describe("save", () => {
     expect(await storage.save(file, "renamed.slp", ref(source))).toEqual(ref(source));
     expect(put).toHaveBeenCalledWith(cfgFor("000398"), source, file, options.onProgress);
     expect(options.askEntities).not.toHaveBeenCalled();
-    expect(options.confirmOverwrite).not.toHaveBeenCalled();
+    expect(options.askOverwrite).not.toHaveBeenCalled();
     expect(findByPath.mock.calls.map((c) => c[1])).toEqual([DATASET_DESCRIPTION_PATH, BIDSIGNORE_PATH]);
   });
 
@@ -117,7 +136,7 @@ describe("save", () => {
     expect(await storage.save(file, "train.pkg.slp", ref("sub-01/ses-02/train.pkg.slp"))).toEqual(ref(target));
     expect(put.mock.calls[0][1]).toBe(target);
     expect(options.askEntities).not.toHaveBeenCalled();
-    expect(options.confirmOverwrite).not.toHaveBeenCalled();
+    expect(options.askOverwrite).not.toHaveBeenCalled();
   });
 
   it("saves two projects of one session to two labels files, neither over the other", async () => {
@@ -128,7 +147,7 @@ describe("save", () => {
       "derivatives/sleap/sub-01/ses-01/beh/sub-01_ses-01_desc-labelsCamTop_pose.slp",
       "derivatives/sleap/sub-01/ses-01/beh/sub-01_ses-01_desc-labelsCamSide_pose.slp",
     ]);
-    expect(options.confirmOverwrite).not.toHaveBeenCalled();
+    expect(options.askOverwrite).not.toHaveBeenCalled();
   });
 
   it("saves a proofread predictions file beside it as labels, leaving the predictions alone", async () => {
@@ -146,25 +165,61 @@ describe("save", () => {
     draft.add(target);
     const { options, storage } = setup();
     expect(await storage.save(file, "labels.slp", ref("sub-01/labels.slp"))).toEqual(ref(target));
-    expect(options.confirmOverwrite).toHaveBeenCalledWith(target);
+    expect(options.askOverwrite).toHaveBeenCalledWith(target);
     expect(put.mock.calls.map((c) => c[1])).toEqual([target]);
+  });
+
+  it("keeps both when told to, saving beside the labels under the first free number", async () => {
+    const target = "derivatives/sleap/sub-01/beh/sub-01_desc-labelsCam_pose.slp";
+    for (const path of [target, numbered(target, 2), numbered(target, 4)]) draft.add(path);
+    draft.add("derivatives/sleap/sub-01/beh/sub-01_desc-labelsCamera_pose.slp");
+    const { storage } = setup({ askOverwrite: () => Promise.resolve("keep-both") });
+    expect(await storage.save(file, "cam.slp", ref("sub-01/cam.slp"))).toEqual(ref(numbered(target, 3)));
+    expect(findByPrefix.mock.calls.map((c) => c[1])).toEqual(["derivatives/sleap/sub-01/beh/sub-01_desc-labelsCam"]);
+    expect(put.mock.calls[0][1]).toBe(numbered(target, 3));
+    expect(draft.has(target)).toBe(true);
   });
 
   it("cancels, sending nothing, when the person keeps the labels already at the target", async () => {
     const target = "derivatives/sleap/sub-01/beh/sub-01_desc-labels_pose.slp";
     draft.add(target);
-    const { storage } = setup({ confirmOverwrite: () => Promise.resolve(false) });
+    const { storage } = setup({ askOverwrite: () => Promise.resolve("cancel") });
     await expect(storage.save(file, "labels.slp", ref("sub-01/labels.slp"))).rejects.toThrow(
-      `Save cancelled: ${target} already holds other labels.`,
+      `Save cancelled: ${target} already holds labels.`,
     );
     expect(put).not.toHaveBeenCalled();
+  });
+
+  it("runs saves one at a time, so the second sees what the first saved", async () => {
+    let release!: () => void;
+    put.mockImplementationOnce(async (_, path) => {
+      await new Promise<void>((r) => (release = r));
+      draft.add(path);
+      return { asset_id: "put", path };
+    });
+    const { options, storage } = setup();
+    const first = storage.save(file, "cam.slp", ref("sub-01/a/cam.slp"));
+    const second = storage.save(file, "cam.slp", ref("sub-01/a/cam.slp"));
+    await vi.waitFor(() => expect(put).toHaveBeenCalledTimes(1));
+    expect(options.askOverwrite).not.toHaveBeenCalled();
+    release();
+    await Promise.all([first, second]);
+    expect(options.askOverwrite).toHaveBeenCalledTimes(1);
+  });
+
+  it("goes on with the next save after one fails", async () => {
+    const { storage } = setup();
+    await expect(storage.save(file, "x.slp")).rejects.toThrow("Only a project opened from EMBER");
+    expect(await storage.save(file, "x.slp", ref("sub-01/x.slp"))).toEqual(
+      ref("derivatives/sleap/sub-01/beh/sub-01_desc-labelsX_pose.slp"),
+    );
   });
 
   it("stops before uploading when it cannot tell whether the target is taken", async () => {
     findByPath.mockRejectedValue(new Error("listing failed"));
     const { options, storage } = setup();
     await expect(storage.save(file, "labels.slp", ref("sub-01/labels.slp"))).rejects.toThrow("listing failed");
-    expect(options.confirmOverwrite).not.toHaveBeenCalled();
+    expect(options.askOverwrite).not.toHaveBeenCalled();
     expect(put).not.toHaveBeenCalled();
   });
 
@@ -230,18 +285,16 @@ describe("save", () => {
   });
 
   it("only warns when the derivative dataset's files cannot be written; the save stands", async () => {
-    findByPath
-      .mockResolvedValueOnce(null)
-      .mockRejectedValueOnce(new Error("listing failed"))
-      .mockResolvedValueOnce(null);
-    put.mockResolvedValueOnce({ asset_id: "labels", path: "x" }).mockRejectedValueOnce("S3 said no");
+    findByPath.mockResolvedValueOnce(null).mockRejectedValueOnce("listing failed").mockResolvedValueOnce(null);
+    // A reason that already ends a sentence gets no second full stop.
+    put.mockResolvedValueOnce({ asset_id: "labels", path: "x" }).mockRejectedValueOnce(new Error("S3 said no."));
     const { options, storage } = setup();
     expect(await storage.save(file, "x.slp", ref("sub-01/x.slp"))).toEqual(
       ref("derivatives/sleap/sub-01/beh/sub-01_desc-labelsX_pose.slp"),
     );
     expect(options.onWarning.mock.calls).toEqual([
-      [`Saved, but could not write ${DATASET_DESCRIPTION_PATH}: listing failed`],
-      [`Saved, but could not write ${BIDSIGNORE_PATH}: S3 said no`],
+      [`Could not write ${DATASET_DESCRIPTION_PATH}: listing failed.`],
+      [`Could not write ${BIDSIGNORE_PATH}: S3 said no.`],
     ]);
   });
 
@@ -306,14 +359,15 @@ describe("refreshUrl", () => {
     expect(options.config).not.toHaveBeenCalled();
   });
 
-  it("renews a link it handed out from the same asset, and forgets the old one", async () => {
+  it("renews a link it handed out from the same asset, the old link included when asked again", async () => {
     const { options, storage } = setup();
     const opened = await storage.open("000123", { asset_id: "a1", path: "sub-01/x.slp", size: 1, fileType: "slp" });
     const request = { url: opened.url, fileType: opened.fileType, name: opened.name };
     const fresh = await storage.refreshUrl(request);
     expect(fresh).toEqual({ ...request, url: "https://s3.test/a1?sig=2" });
     expect(options.config).toHaveBeenLastCalledWith("000123");
-    expect(await storage.refreshUrl(request)).toBe(request);
-    expect((await storage.refreshUrl(fresh)).url).toBe("https://s3.test/a1?sig=3");
+    // A caller that still holds the first link, such as a second save that read it before the renewal.
+    expect((await storage.refreshUrl(request)).url).toBe("https://s3.test/a1?sig=3");
+    expect((await storage.refreshUrl(fresh)).url).toBe("https://s3.test/a1?sig=4");
   });
 });

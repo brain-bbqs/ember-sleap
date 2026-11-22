@@ -85,10 +85,13 @@ Every field is optional; an unreadable card, or a field of the wrong type, is ig
 Only files directly inside the model folder count.
 The card id is `ember:<dandiset>/<model-id>`, and file URLs are the archive's `/api/assets/<asset_id>/download/` links, which the compute side follows with its own credentials.
 The page lists the open dandiset's models only.
+While jobs run on the in-browser compute stub, which writes nothing to EMBER, the stub lists the models it trained under the same ids, so inference can be tried with them.
 
 ## Hugging Face
 
 A repository is listed when it carries the `sleap-nn` tag and holds at least one `training_config.yaml`, at its root or in a subfolder.
+The page reads up to four pages of 50 tagged repositories, following the Hub's `Link: rel="next"` header, and keeps the pages it has if a later one fails.
+It never sends the picker's text to the Hub, whose search matches repository ids only; the text is matched in the page against each card's id, name and species.
 
 | Read from                           | Becomes                                                |
 | ----------------------------------- | ------------------------------------------------------ |
