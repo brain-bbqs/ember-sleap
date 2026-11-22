@@ -61,7 +61,7 @@ Everything we build is static and served by GitHub Pages. We run no servers.
 
 ## The component contract
 
-A sketch to propose to upstream in an RFC issue. Names and shapes are open for discussion.
+A sketch to propose to upstream in a design proposal issue (draft: [UPSTREAM_PROPOSAL.md](UPSTREAM_PROPOSAL.md)). Names and shapes are open for discussion.
 
 ```ts
 // @talmolab/sleap-app
@@ -187,8 +187,8 @@ Order and process:
 
 - PRs 1 and 2 are plain fixes; send them as soon as they are ready.
 - PRs 3 to 6 are refactors with no visible change.
-- PRs 7 and 8 define the public contract. Open an RFC issue on `talmolab/sleap-app` with the contract sketch above before writing them.
-- 7c touches the most-changed code (`connectStore.ts`). Raise it in the RFC early, send it last.
+- PRs 7 and 8 define the public contract. Open the design proposal issue on `talmolab/sleap-app` ([draft](UPSTREAM_PROPOSAL.md)) before writing them.
+- 7c touches the most-changed code (`connectStore.ts`). Raise it in the proposal early, send it last.
 
 Other repositories:
 
@@ -262,7 +262,7 @@ A precedent exists: dandiset 000598 holds an EMBER → Pennsieve → EMBER DeepL
 
 | Milestone | Deliverable | Effort |
 | --- | --- | --- |
-| M0 Agreements | RFC issue upstream; EMBER OAuth app and hostname; BIDS layout approved; proxy job API drafted | 1 week elapsed |
+| M0 Agreements | Design proposal issue upstream; EMBER OAuth app and hostname; BIDS layout approved; proxy job API drafted | 1 week elapsed |
 | M1 Foundations | Fork set up with CI tarballs; PRs 1 and 2; ember-sleap scaffolded from the template with sign-in | 1 to 1.5 weeks |
 | M2 Embeddable app | PRs 3 to 6 on the fork, upstream tests and screenshots green | 1.5 to 2 weeks |
 | M3 Contract | PRs 7a and 8 on the fork; ember-sleap mounts the fork build | 1.5 to 2.5 weeks |
@@ -286,7 +286,7 @@ M1 to M4 is the end-to-end prototype with stubbed compute (about 5 to 8 weeks). 
 
 | Risk | Impact | Mitigation |
 | --- | --- | --- |
-| Upstream wants a different contract | Rework of PRs 7 and 8 | RFC before writing them; keep 1 to 6 contract-free |
+| Upstream wants a different contract | Rework of PRs 7 and 8 | Design proposal before writing them; keep 1 to 6 contract-free |
 | Upstream pace (about 3 PRs a day) | Fork branches conflict | Weekly rebase; short stack; land early PRs fast |
 | Style or portal refactors regress the standalone app | PRs rejected | Screenshot tests on every branch |
 | Proxy job API not defined yet | Compute cannot be finished | Build against a stub; agree the API early |
