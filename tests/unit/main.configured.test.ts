@@ -51,7 +51,8 @@ vi.mock("../../src/lib/emberStorage", () => ({
             }),
       // The first save's scaffolding is refused; later ones find it written.
       save: () => {
-        options.onProgress?.(0.5);
+        options.onProgress?.("hashing", 0.25);
+        options.onProgress?.("uploading", 0.5);
         if (++saves === 1) options.onWarning?.(fakes.warning);
         return Promise.resolve({ key: "ember:000123:derivatives/sleap/sub-01/beh/sub-01_desc-labels_pose.slp" });
       },
@@ -137,13 +138,19 @@ describe("main.ts once sign-in, compute and the model index are configured", () 
     expect(el("open-status").textContent).toBe("");
   });
 
-  it("reports upload progress, then where the save landed with the scaffold warning kept beside it", async () => {
+  it("reports each save stage's progress, then where the save landed with the scaffold warning kept beside it", async () => {
     const shown = recordTexts(el("host-status"));
     role("save").click();
     await vi.waitFor(() => expect(el("host-status").textContent).toBe(`${LANDED}. ${WARNING}`));
     shown.stop();
-    expect(shown.texts).toEqual(["Uploading to EMBER… 50%", WARNING, `${LANDED}. ${WARNING}`]);
+    expect(shown.texts).toEqual([
+      "Checking the file… 25%",
+      "Uploading to EMBER… 50%",
+      WARNING,
+      `${LANDED}. ${WARNING}`,
+    ]);
     expect(el("host-status").classList.contains("err")).toBe(true);
+    expect(fakes.storageOptions!.hash).toEqual(expect.any(Function));
     expect(fakes.storageOptions!.versions()).toEqual({ app: expect.any(String), sleap: "0.0.0-stand-in" });
   });
 

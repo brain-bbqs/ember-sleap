@@ -122,9 +122,10 @@ describe("save", () => {
   it("saves a labels file already in derivatives/sleap/ back over itself, without asking", async () => {
     const source = "derivatives/sleap/sub-01/beh/sub-01_desc-labelsCamTop_pose.slp";
     draft.add(source);
-    const { options, storage } = setup({ saveRefusal: () => null });
+    const hash = vi.fn();
+    const { options, storage } = setup({ saveRefusal: () => null, hash });
     expect(await storage.save(file, "renamed.slp", ref(source))).toEqual(ref(source));
-    expect(put).toHaveBeenCalledWith(cfgFor("000398"), source, file, options.onProgress);
+    expect(put).toHaveBeenCalledWith(cfgFor("000398"), source, file, { onProgress: options.onProgress, hash });
     expect(options.askEntities).not.toHaveBeenCalled();
     expect(options.askOverwrite).not.toHaveBeenCalled();
     expect(findByPath.mock.calls.map((c) => c[1])).toEqual([DATASET_DESCRIPTION_PATH, BIDSIGNORE_PATH]);
@@ -267,6 +268,8 @@ describe("save", () => {
       DATASET_DESCRIPTION_PATH,
       BIDSIGNORE_PATH,
     ]);
+    // Two small text files: hashed on the main thread, with no progress to show.
+    expect(put.mock.calls.slice(1).map((c) => c[3])).toEqual([undefined, undefined]);
     const description = JSON.parse(await put.mock.calls[1][2].text()) as {
       GeneratedBy: { Version: string }[];
       SourceDatasets: { URL: string }[];

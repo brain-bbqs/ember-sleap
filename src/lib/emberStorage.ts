@@ -20,7 +20,8 @@ import {
   type ArchiveAsset,
   type ProjectAsset,
 } from "./emberAssets";
-import { putAsset } from "./emberUpload";
+import { putAsset, type SaveStage } from "./emberUpload";
+import type { EtagHasher } from "./etagPool";
 import { baseName, fileTypeOfPath, isProjectType } from "./fileType";
 import { fromHostRef, toHostRef } from "./hostRef";
 import type { HostRef, OpenRequest, ResolvedFile } from "./sleapContract";
@@ -57,7 +58,9 @@ export interface EmberStorageOptions {
   saveRefusal?: (dandisetId: string) => string | null;
   /** Read at save time: the app version is fixed, but the SLEAP component loads on first open. */
   versions: () => { app: string; sleap: string };
-  onProgress?: (fraction: number) => void;
+  onProgress?: (stage: SaveStage, fraction: number) => void;
+  /** Hashes the project file; the derivative dataset's small scaffold files hash on the main thread. */
+  hash?: EtagHasher;
   /** Hears about a non-fatal problem, such as the derivative dataset's scaffolding failing to write. */
   onWarning?: (message: string) => void;
   fetch?: typeof fetch;
@@ -81,6 +84,7 @@ export function createEmberStorage(options: EmberStorageOptions): EmberStorage {
     saveRefusal,
     versions,
     onProgress,
+    hash,
     onWarning = console.warn,
     fetch,
   } = options;
@@ -151,7 +155,7 @@ export function createEmberStorage(options: EmberStorageOptions): EmberStorage {
         if (choice === "keep-both") target = await besideTarget(cfg, target);
       }
     }
-    await putAsset(cfg, target, file, onProgress);
+    await putAsset(cfg, target, file, { onProgress, hash });
     await ensureScaffold(cfg);
     return toHostRef({ dandisetId: source.dandisetId, path: target });
   }

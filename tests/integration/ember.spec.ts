@@ -1,6 +1,7 @@
 // Open and save against a routed EMBER archive and S3 bucket: every request the page makes to the
 // archive is answered here, so the whole save sequence (dandi-etag hash, initialize, multipart PUT,
 // complete, validate, create asset) runs in a real browser with no real archive behind it.
+import { createHash } from "node:crypto";
 import { test, expect, type Page, type Route } from "@playwright/test";
 import { STORAGE_KEY } from "../../src/lib/settings";
 
@@ -19,10 +20,16 @@ const CORS = {
 interface Archive {
   assets: { asset_id: string; path: string; size: number }[];
   created: { method: string; path: string; blob_id: string }[];
+  /** The dandi-etag each initialize named, in order. */
+  digests: string[];
   uploads: Map<string, Buffer>;
 }
 
 const role = (page: Page, name: string) => page.locator(`[data-role="${name}"]`);
+
+/** The dandi-etag of a blob below the 64 MB part size: the md5 of its one part's md5, then "-1". */
+const singlePartEtag = (bytes: Buffer) =>
+  `${createHash("md5").update(createHash("md5").update(bytes).digest()).digest("hex")}-1`;
 
 function json(route: Route, body: unknown, status = 200) {
   return route.fulfill({ status, headers: CORS, contentType: "application/json", body: JSON.stringify(body) });
@@ -30,7 +37,7 @@ function json(route: Route, body: unknown, status = 200) {
 
 /** A small archive holding one dandiset, 000123, owned by the signed-in account. */
 async function routeArchive(page: Page, assets: Archive["assets"]): Promise<Archive> {
-  const archive: Archive = { assets, created: [], uploads: new Map() };
+  const archive: Archive = { assets, created: [], digests: [], uploads: new Map() };
   let nextUpload = 0;
 
   /** The archive's read endpoints: the account, the dandiset, its listing and its downloads. */
@@ -66,7 +73,8 @@ async function routeArchive(page: Page, assets: Archive["assets"]): Promise<Arch
   function write(route: Route, path: string): Promise<void> | null {
     const request = route.request();
     if (path === "/uploads/initialize/") {
-      const { contentSize } = request.postDataJSON() as { contentSize: number };
+      const { contentSize, digest } = request.postDataJSON() as { contentSize: number; digest: { value: string } };
+      archive.digests.push(digest.value);
       const id = `u${++nextUpload}`;
       return json(route, {
         upload_id: id,
@@ -152,6 +160,9 @@ test.describe("EMBER storage", () => {
     ]);
     const uploaded = [...archive.uploads.values()];
     expect(uploaded[0].equals(PROJECT_BYTES)).toBe(true);
+    // The project file was hashed in the page's worker pool, to the etag the archive expects.
+    expect(page.workers().some((w) => /etag\.worker/.test(w.url()))).toBe(true);
+    expect(archive.digests).toEqual(uploaded.map(singlePartEtag));
     const description = JSON.parse(uploaded[1].toString()) as Record<string, unknown>;
     expect(description.DatasetType).toBe("derivative");
     expect(description.SourceDatasets).toEqual([{ URL: "https://dandi.emberarchive.org/dandiset/000123/draft" }]);

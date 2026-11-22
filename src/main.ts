@@ -25,6 +25,8 @@ import { COMPUTE_PROXY_URL, createProxyComputeClient, type ComputeClient } from 
 import { createStubCompute } from "./lib/computeStub";
 import { fetchDandiset, listOwnDandisets, listProjects, type ProjectAsset } from "./lib/emberAssets";
 import { createEmberStorage, type ProjectStorage } from "./lib/emberStorage";
+import type { SaveStage } from "./lib/emberUpload";
+import { createHashPool } from "./lib/etagPool";
 import { createSleapHost } from "./lib/host";
 import { fromHostRef } from "./lib/hostRef";
 import { createMemoryStorage } from "./lib/memoryStorage";
@@ -179,13 +181,22 @@ function saveRefusal(dandisetId: string): string | null {
   return null;
 }
 
+const SAVE_STAGES: Record<SaveStage, string> = {
+  hashing: "Checking the file…",
+  uploading: "Uploading to EMBER…",
+};
+
+// Hashing a project of hundreds of MB on the main thread would freeze the page for the length of it.
+const hashPool = createHashPool();
+
 const ember = createEmberStorage({
   config: configFor,
   askEntities: createEntitiesPrompt(els.entities),
   askOverwrite: createOverwritePrompt(els.overwrite),
   saveRefusal,
   versions: () => ({ app: __APP_VERSION__, sleap: component?.version ?? "unknown" }),
-  onProgress: (fraction) => say(els.hostStatus, `Uploading to EMBER… ${Math.round(fraction * 100)}%`),
+  hash: hashPool.hash,
+  onProgress: (stage, fraction) => say(els.hostStatus, `${SAVE_STAGES[stage]} ${Math.round(fraction * 100)}%`),
   onWarning: (message) => {
     saveWarnings.push(message);
     say(els.hostStatus, message, "err");

@@ -301,9 +301,38 @@ describe("putAsset", () => {
         "PUT /dandisets/000398/versions/draft/assets/old/": () => json({ asset_id: "old2", path }),
       }),
     );
-    const progress: number[] = [];
-    expect(await putAsset(cfg, path, blob, (f) => progress.push(f))).toEqual({ asset_id: "old2", path });
+    const progress: [string, number][] = [];
+    expect(await putAsset(cfg, path, blob, { onProgress: (...p) => progress.push(p) })).toEqual({
+      asset_id: "old2",
+      path,
+    });
     expect(calls.at(-1)?.method).toBe("PUT");
-    expect(progress.at(-1)).toBe(1);
+    expect(progress).toEqual([
+      ["hashing", 1],
+      ["hashing", 1],
+      ["uploading", 0.999],
+      ["uploading", 1],
+    ]);
+  });
+
+  it("hashes with the function it is given, reporting that as the hashing stage", async () => {
+    const blob = new Blob(["labels bytes"]);
+    const calls = stubFetch(
+      uploadRoutes(blob.size, {
+        [lookup]: () => json({ results: [] }),
+        "POST /dandisets/000398/versions/draft/assets/": () => json({ asset_id: "new", path }),
+      }),
+    );
+    const hash = vi.fn((_blob: Blob, _parts: FilePart[], onProgress?: (fraction: number) => void) => {
+      onProgress?.(0.5);
+      return Promise.resolve("pooled-etag");
+    });
+    const signal = new AbortController().signal;
+    const progress: [string, number][] = [];
+
+    await putAsset(cfg, path, blob, { hash, signal, onProgress: (...p) => progress.push(p) });
+    expect(hash).toHaveBeenCalledWith(blob, planParts(blob.size), expect.any(Function), signal);
+    expect((calls[0].body as { digest: { value: string } }).digest.value).toBe("pooled-etag");
+    expect(progress[0]).toEqual(["hashing", 0.5]);
   });
 });

@@ -14,6 +14,7 @@ import {
 } from "@brain-bbqs/ember-client";
 import { runQueue } from "@brain-bbqs/utils";
 import { findAssetByPath } from "./emberAssets";
+import type { EtagHasher } from "./etagPool";
 
 const PARALLEL_PARTS = 3;
 const PART_ATTEMPTS = 3;
@@ -156,17 +157,26 @@ export async function createOrReplaceAsset(
   }))!;
 }
 
+export type SaveStage = "hashing" | "uploading";
+
+export interface PutAssetOptions {
+  /** Each stage reports its own 0..1 fraction: hashing first, then uploading. */
+  onProgress?: (stage: SaveStage, fraction: number) => void;
+  /** The dandi-etag hash, `computeDandiEtag` on the main thread unless a worker pool is given. */
+  hash?: EtagHasher;
+  signal?: AbortSignal;
+}
+
 /** Hashes, uploads and places `blob` at `path` in the dandiset's draft: the whole save, end to end. */
 export async function putAsset(
   cfg: ArchiveConfig,
   path: string,
   blob: Blob,
-  onProgress?: (fraction: number) => void,
-  signal?: AbortSignal,
+  { onProgress, hash = computeDandiEtag, signal }: PutAssetOptions = {},
 ): Promise<Asset> {
   const parts = planParts(blob.size);
-  const etag = await computeDandiEtag(blob, parts, undefined, signal);
-  const blobId = await uploadBlob(cfg, blob, etag, parts, onProgress, signal);
+  const etag = await hash(blob, parts, (fraction) => onProgress?.("hashing", fraction), signal);
+  const blobId = await uploadBlob(cfg, blob, etag, parts, (fraction) => onProgress?.("uploading", fraction), signal);
   const existing = await findAssetByPath(cfg, path);
   return createOrReplaceAsset(cfg, path, blobId, existing?.asset_id ?? null);
 }
