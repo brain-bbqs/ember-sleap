@@ -2,9 +2,9 @@
 
 ## Live test injections
 
-| URL                  | What it should look like                                                                             | Try it                                                  |
-| -------------------- | ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------- |
-| `?test&mock_project` | The open-project card, with the SLEAP stand-in showing a mock project whose first bytes read as HDF5 | [Open](https://sleap.brain-bbqs.org/?test&mock_project) |
+| URL                  | What it should look like                                                                             | Try it                                                              |
+| -------------------- | ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| `?test&mock_project` | The open-project card, with the SLEAP stand-in showing a mock project whose first bytes read as HDF5 | [Open](https://brain-bbqs.github.io/ember-sleap/?test&mock_project) |
 
 `?test` alone (without one of the above) is a no-op that never changes anything by itself.
 
@@ -18,7 +18,7 @@ The Chromatic project-open snapshot uses this to capture the state deterministic
 
 ## Deep links
 
-`?dandiset=<id>` fills in the dandiset and lists its projects on load, e.g. [`?dandiset=000398`](https://sleap.brain-bbqs.org/?dandiset=000398).
+`?dandiset=<id>` fills in the dandiset and lists its projects on load, e.g. [`?dandiset=000398`](https://brain-bbqs.github.io/ember-sleap/?dandiset=000398).
 This is a real request to the archive, not a test injection.
 
 ## Expected console noise
