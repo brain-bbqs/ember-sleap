@@ -70,11 +70,20 @@ export interface ModelCard {
   species?: string;
   heads: ("centroid" | "centered_instance" | "bottomup" | "single_instance")[];
   skeleton?: { nodes: string[]; edges: [string, string][] };
-  files: { role: "config" | "checkpoint"; url: string; sha256?: string }[];
+  files: {
+    role: "config" | "checkpoint";
+    folder: string;                     // the model folder: "" for a single one; a top-down
+                                        // model has "centroid" and "centered_instance"
+    url: string;
+    sha256?: string;
+  }[];
+  sourceLabel?: string;                 // where the host found it, shown as is
 }
 ```
 
 `TrainJobSpec` and `TrackJobSpec` are the existing types in `src/lib/sleapConnect.ts`, and `JobEvent` would mirror the events the job viewer already consumes. That way the training and inference dialogs and the job viewer stay exactly as they are; only where a job goes changes.
+
+A model card names the model folder of each file because sleap-nn loads a model one folder per head: a top-down model is a centroid folder and a centered-instance folder, and inference needs both, so the host sends a worker every folder of the model the picker chose; any other model is one folder. `sourceLabel` is the host's own words for where it found a model (for example "from Hugging Face talmolab/mice-topdown"), which the picker shows beside it as it is and never parses or fetches.
 
 ## What we'd guarantee
 

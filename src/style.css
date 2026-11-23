@@ -1,0 +1,241 @@
+/* The shell every BBQS companion app shares comes from @brain-bbqs/ui: the theme tokens (light,
+   dark via the OS preference or the header toggle), the page defaults, the header, watermark and
+   footer bar, the shared controls, and the "What's New" modal. Set a token or knob (see that
+   package's README) on :root below to change it. This app opens from EMBER, not a dropzone, so it skips
+   the package's dropzone.css.
+   CSS allows @import only at the top, so every rule below follows the shared ones. */
+@import "@brain-bbqs/ui/styles/tokens.css";
+@import "@brain-bbqs/ui/styles/base.css";
+@import "@brain-bbqs/ui/styles/shell.css";
+@import "@brain-bbqs/ui/styles/controls.css";
+@import "@brain-bbqs/ui/styles/dataset-picker.css";
+@import "@brain-bbqs/ui/styles/human-subjects.css";
+@import "@brain-bbqs/ui/styles/whats-new.css";
+
+/* ------------------------------------------------------------------------------------------ */
+/* Opening a project from EMBER */
+/* ------------------------------------------------------------------------------------------ */
+
+.open-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+}
+
+.open-form input {
+  flex: 1 1 10rem;
+  min-width: 0;
+  padding: 0.45rem 0.6rem;
+  font: inherit;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.project-list {
+  list-style: none;
+  margin: 1rem 0 0;
+  padding: 0;
+  display: grid;
+  gap: 0.35rem;
+}
+
+.project-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.25rem 0.75rem;
+}
+
+.project-open,
+.predictions-open {
+  font: inherit;
+  font-family: var(--mono);
+  border: none;
+  background: none;
+  padding: 0;
+  color: var(--accent);
+  text-decoration: underline;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+  text-align: left;
+}
+
+.hint:empty {
+  display: none;
+}
+
+/* ------------------------------------------------------------------------------------------ */
+/* The embedded SLEAP app and its stand-in */
+/* ------------------------------------------------------------------------------------------ */
+
+#project-title {
+  overflow-wrap: anywhere;
+}
+
+.sleap-root {
+  margin-top: 1rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  min-height: 12rem;
+  overflow: hidden;
+}
+
+.sleap-standin {
+  padding: 1rem;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.sleap-standin:focus {
+  outline: none;
+}
+
+.sleap-standin:focus-within {
+  box-shadow: inset 0 0 0 2px var(--accent-soft);
+}
+
+.standin-banner {
+  margin: 0;
+  padding: 0.5rem 0.75rem;
+  border-radius: 6px;
+  background: var(--warn-soft);
+  color: var(--text);
+  font-size: 0.9rem;
+}
+
+.standin-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+}
+
+.standin-file-name {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.standin-section {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.standin-section h3 {
+  margin: 0.5rem 0 0;
+  font-size: 1rem;
+}
+
+.standin-field input,
+.standin-field select {
+  font: inherit;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.3rem 0.5rem;
+  max-width: 100%;
+}
+
+.standin-models {
+  margin: 0;
+  padding-left: 1.25rem;
+  display: grid;
+  gap: 0.35rem;
+}
+
+.standin-job-log {
+  margin: 0;
+  max-height: 14rem;
+  overflow: auto;
+  padding: 0.5rem 0.75rem;
+  border-radius: 6px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* ------------------------------------------------------------------------------------------ */
+/* The predictions inference wrote, to open and proofread */
+/* ------------------------------------------------------------------------------------------ */
+
+.predictions {
+  margin-top: 1rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border);
+  display: grid;
+  gap: 0.5rem;
+}
+
+.predictions h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.predictions .hint {
+  margin: 0;
+}
+
+.predictions-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.35rem;
+}
+
+.predictions-status {
+  overflow-wrap: anywhere;
+}
+
+#predictions-retry {
+  justify-self: start;
+}
+
+/* ------------------------------------------------------------------------------------------ */
+/* Asking where a save goes: its subject and session, or beside labels already saved */
+/* ------------------------------------------------------------------------------------------ */
+
+.page-dialog {
+  max-width: min(28rem, calc(100vw - 2rem));
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--card);
+  color: var(--text);
+}
+
+.page-dialog form {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.page-dialog h2 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.page-dialog input {
+  font: inherit;
+  padding: 0.4rem 0.6rem;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.dialog-path {
+  font-family: var(--mono);
+  overflow-wrap: anywhere;
+}
+
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}

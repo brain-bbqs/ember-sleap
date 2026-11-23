@@ -1,0 +1,44 @@
+// One worker of the dandi-etag pool in src/lib/etagPool.ts, copied from bbqs-uploader's
+// `workers/etag.worker.ts` (brain-bbqs/bbqs-uploader@c8bd4e9). This app is the second one carrying it.
+import { hashPart } from "@brain-bbqs/ember-client";
+import type { HashWorkerRequest, HashWorkerResponse } from "../lib/etagPool";
+
+// Cast rather than reference the "webworker" lib, which conflicts with the app's "DOM" lib
+// in a single tsconfig (both declare an incompatible global `self`).
+const ctx = self as unknown as {
+  postMessage(message: HashWorkerResponse, transfer?: Transferable[]): void;
+  onmessage: ((e: MessageEvent<HashWorkerRequest>) => void) | null;
+};
+
+// Request ids whose "cancel" arrived while the part was still being hashed. The hash loop yields
+// to the event loop on every 16MB chunk read, so a cancel message posted mid-part gets processed
+// between chunks and the loop below notices it on the next chunk boundary.
+const cancelledIds = new Set<number>();
+
+class HashCancelled extends Error {}
+
+ctx.onmessage = (e) => {
+  void handleRequest(e.data);
+};
+
+async function handleRequest(msg: HashWorkerRequest): Promise<void> {
+  if (msg.type === "cancel") {
+    cancelledIds.add(msg.requestId);
+    return;
+  }
+  const { requestId, blob, part } = msg;
+  try {
+    const digest = await hashPart(blob, part, (bytesDone) => {
+      if (cancelledIds.has(requestId)) throw new HashCancelled();
+      ctx.postMessage({ type: "progress", requestId, bytesDone });
+    });
+    ctx.postMessage({ type: "done", requestId, digest }, [digest.buffer as ArrayBuffer]);
+  } catch (err) {
+    if (err instanceof HashCancelled) {
+      cancelledIds.delete(requestId);
+      ctx.postMessage({ type: "cancelled", requestId });
+      return;
+    }
+    ctx.postMessage({ type: "error", requestId, message: err instanceof Error ? err.message : String(err) });
+  }
+}

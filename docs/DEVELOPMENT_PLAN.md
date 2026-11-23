@@ -6,6 +6,7 @@ Draft, 2026-11-22. Supersedes the "extension registries" approach in the earlier
 
 - [Summary](#summary)
 - [Decisions so far](#decisions-so-far)
+- [Progress in this repository](#progress-in-this-repository)
 - [Where upstream is today](#where-upstream-is-today)
 - [Target architecture](#target-architecture)
 - [The component contract](#the-component-contract)
@@ -38,7 +39,21 @@ Rough effort: about 9 to 15 engineer-weeks for one developer. The end-to-end pro
 - **Sign-in lives in our page.** EMBER OAuth with PKCE via [`@brain-bbqs/ember-client`](https://github.com/brain-bbqs/bbqs-web-components/tree/main/packages/ember-client), using ember-sleap's own OAuth app (see [EMBER sign-in](#ember-sign-in)). The archive's own login is GitHub accounts. The SLEAP app never sees sign-in UI.
 - **Pennsieve is the only compute.** Training and inference go through a central proxy to a Pennsieve service account, built by another team. Local and SLEAP Connect compute are switched off in our build.
 - **File URLs are extensionless blobs.** EMBER and proxy URLs are routed blob URLs with no file extension. The file type always travels alongside the URL.
-- **Hosting is GitHub Pages** under a `*.brain-bbqs.org` hostname, per the BBQS app convention (bbqs-uploader is `upload.brain-bbqs.org`). The exact name is still open, e.g. `sleap.brain-bbqs.org`.
+- **Hosting is GitHub Pages** at its default address, `https://brain-bbqs.github.io/ember-sleap/`, with PR previews under `/ember-sleap/pr-preview/pr-<n>/`. A `*.brain-bbqs.org` hostname, per the BBQS app convention (bbqs-uploader is `upload.brain-bbqs.org`), can come later by adding `public/CNAME` and updating `preview.yml`.
+
+## Progress in this repository
+
+Updated 2026-11-22. Nothing upstream has been touched: no fork, no PRs, no proposal issue. Until the component exists, a **stand-in** (`src/ui/sleapStandIn.ts`) mounts through the proposed contract (`src/lib/sleapContract.ts`) and drives every host callback, so the host side is built and tested now. Swapping in the real package is one function, `loadSleapComponent` in `src/ui/sleapComponent.ts`.
+
+| Milestone | ember-sleap part | State |
+| --- | --- | --- |
+| M1 | Scaffold from `bbqs-web-app-template`, with sign-in | Done. Sign-in is wired through `@brain-bbqs/ember-client` but stays off (`OAUTH_CLIENT_ID` is empty) until EMBER registers an OAuth app. Served at the GitHub Pages default, `brain-bbqs.github.io/ember-sleap/`, with no custom domain for now. |
+| M3 | Mount the component | Done against the stand-in, with `compute.builtIn: false` and every `pageEffects` off. |
+| M4 | Open and save on EMBER as BIDS derivatives | Open verified live (dandiset 000398: `glob` listing, `/download/` to a presigned S3 link, ranged read of the extensionless URL by declared type). Save runs end to end in Playwright against a routed archive (dandi-etag hashed in a worker pool, multipart upload, asset create or replace, `dataset_description.json` and `.bidsignore` on first save, one labels file per source project, and a replace / keep both / cancel question when that file exists); not yet run against the real archive. |
+| M5 | Model sources | Hugging Face, EMBER `derivatives/sleap/models/` and `models.json` index sources written and unit-tested ([MODEL_INDEX.md](MODEL_INDEX.md)). A card names the model folder of each file, so a top-down model carries its centroid and centered-instance folders (on EMBER, a subfolder per head) and a track job sends both; a folder without its config and checkpoint, or a top-down card without a folder per head, is left out, and folders that are not one top-down model's are listed as a model each. Each card says where it was found, and index entries replace the direct listing of a Hugging Face or EMBER model whose every folder they name. `docs/examples/models.json` is a valid example index, and `npm run check-model-index -- <file>` checks one before it is published. Not live: Hugging Face is unreachable from the build sandbox, and the index dandiset does not exist (`MODEL_INDEX_URL` is null). |
+| M6 | Compute | Proxy client written against a drafted API ([COMPUTE_API.md](COMPUTE_API.md)); jobs run on an in-browser stub emitting upstream's `job.*` events until `COMPUTE_PROXY_URL` is set. A model the stub trains is listed in the picker under the id the EMBER source would give its folder, so inference can name it. Each job input carries its EMBER asset (id, path and stable `/download/` URL), a project saved since it was opened is sent as what its latest save wrote, and labels sent inline are saved to EMBER as a `desc-trainingset` package first, so the proxy only ever receives files on EMBER. A completed inference job's `predictions` are listed under the app (only `.slp` and `.pkg.slp` paths under `derivatives/sleap/` in the job's own dandiset; anything else is dropped with a warning) and open from EMBER by path, saying when a file is not there yet; proofreading one and saving writes `desc-labels<Source>` beside it. Runs end to end in Playwright against the stub and a routed archive. |
+
+Validation checklist items covered so far, against the stand-in (see [Validation](#validation)): mounting without changing our header, rendering inside the app's box, Ctrl+S only inside the app, opening an extensionless EMBER link with a declared type, finding a video through `resolveVideo`, saving under `derivatives/sleap/`, the unsaved-work check on sign-out, jobs through the host with status and logs, no built-in compute, and everything loading from our own host. They need re-running once the real component mounts, since upstream's menus, dialogs and workers are what the isolation checks are really about.
 
 ## Where upstream is today
 
@@ -63,7 +78,7 @@ For reference only, since sleap-nn and the container are handled separately. Fro
 ## Target architecture
 
 ```text
-+---------------- ember-sleap page (GitHub Pages, *.brain-bbqs.org) ----------------+
++------------ ember-sleap page (GitHub Pages, brain-bbqs.github.io) ----------------+
 |  BBQS shell: header, EMBER account menu, human-subjects gate, footer              |
 |    @brain-bbqs/ui  +  @brain-bbqs/ember-client                                    |
 |  +-------- mountSleapApp(el, { host }) from @talmolab/sleap-app ---------------+  |
@@ -134,7 +149,14 @@ export interface ModelCard {
   species?: string;
   heads: ("centroid" | "centered_instance" | "bottomup" | "single_instance")[];
   skeleton?: { nodes: string[]; edges: [string, string][] };
-  files: { role: "config" | "checkpoint"; url: string; sha256?: string }[];
+  files: {
+    role: "config" | "checkpoint";
+    folder: string;                     // the model folder: "" for a single one; a top-down
+                                        // model has "centroid" and "centered_instance"
+    url: string;
+    sha256?: string;
+  }[];
+  sourceLabel?: string;                 // where the host found it, shown as is
 }
 ```
 
@@ -142,6 +164,7 @@ Notes:
 
 - `TrainJobSpec` and `TrackJobSpec` are upstream's existing job types (`src/lib/sleapConnect.ts`), so the training and inference dialogs stay upstream's. For us, `labels_path`, `data_path` and `model_paths` hold EMBER URLs and model references instead of worker paths.
 - `JobEvent` mirrors the events the job viewer already consumes (`job.status`, `job.log`, `job.result`, `job.epoch`).
+- Each model file names its model folder, since sleap-nn loads one head per folder: a top-down model is two folders and inference needs both. `sourceLabel` is the host's own words for where it found a model; the structured record of Hugging Face, EMBER or the index stays on the host's side.
 - The app keeps 18 module-level state stores, so only one instance can be mounted per page. That is fine for us.
 
 </details>
@@ -273,14 +296,22 @@ No BIDS extension exists for pose estimation; BIDS reviewers treat pose annotati
 derivatives/sleap/
   dataset_description.json      DatasetType "derivative"; GeneratedBy: ember-sleap + sleap-app versions; SourceDatasets: this dandiset
   .bidsignore                   lists *.slp, *.ckpt, models/
-  sub-<label>/ses-<label>/beh/
-    sub-<label>_ses-<label>_desc-labels_pose.slp
-    sub-<label>_ses-<label>_desc-predictions_pose.slp
-    sub-<label>_ses-<label>_desc-predictions_pose.nwb     ndx-pose export
-  models/<model-id>/            training_config.yaml, best.ckpt, model card
+  sub-<label>/[ses-<label>/]beh/
+    sub-<label>[_ses-<label>][_task-<label>][_acq-<label>][_run-<index>][_recording-<label>]_desc-labels<Source>_pose.slp
+    sub-<label>[_ses-<label>][...]_desc-predictions<Source>_pose.slp
+    sub-<label>[_ses-<label>][...]_desc-predictions<Source>_pose.nwb     ndx-pose export
+    sub-<label>[_ses-<label>][...]_desc-trainingset<Source><yyyymmddhhmmss>_pose.pkg.slp   labels a training run was sent unsaved
+  models/<model-id>/            training_config.yaml, best.ckpt, model_card.json
+  models/<model-id>/<head>/     training_config.yaml, best.ckpt per head when a model has several (top-down), model_card.json in models/<model-id>/
 ```
 
-The `_pose` suffix is not an official BIDS suffix; `.bidsignore` keeps validators quiet. The page writes `dataset_description.json` on first save, derives `sub-` and `ses-` from the source video's path, and asks when it cannot.
+The `_pose` suffix is not an official BIDS suffix; `.bidsignore` keeps validators quiet. The page writes `dataset_description.json` and `.bidsignore` on the first save into a dandiset.
+
+Each source project gets its own labels file, so two projects of one session never share one. The file keeps the source name's `task`, `acq`, `run` and `recording` entities, and `<Source>` is one CamelCase word made of the source's folders below its subject and session (datatype folders such as `beh` aside), what its own `desc` adds after `labels` or `predictions`, and the rest of its name, minus a trailing `pose` or `labels`. So `sub-01/ses-01/beh/cam-top.slp` saves to `derivatives/sleap/sub-01/ses-01/beh/sub-01_ses-01_desc-labelsCamTop_pose.slp`. Inference writes `desc-predictions<Source>` beside it, and proofreading those predictions saves back to the same labels file. Training on edits not yet saved keeps them beside it too, as a `desc-trainingset<Source><yyyymmddhhmmss>` package (UTC) of each run's own, which never goes over the labels file.
+
+A labels file already in `derivatives/sleap/` is saved back over itself. Any other source, a predictions file included, is never written over: it gets a labels file of its own. When that file already exists (an earlier save of the same source, or another source whose name reads the same), the page asks whether to replace it, keep both (the new labels go beside it as `desc-labels<Source>2`, the first free number), or cancel.
+
+The page reads `sub-` and `ses-` from the source's folders (including a folder such as `sub-01_ses-day1_behavior+image/`) or its file name. It asks for them when it cannot read a subject that is a BIDS label (letters and digits only), or when the path names a session it cannot read one for, so `ses-day-1` is asked about rather than dropped. The dialog offers the path's own labels, with everything else removed, as the answer to check.
 
 ### Models
 
@@ -288,8 +319,8 @@ The `_pose` suffix is not an official BIDS suffix; `.bidsignore` keeps validator
 
 | Source | How models are found | Login |
 | --- | --- | --- |
-| Hugging Face | Hub search for repos tagged `sleap-nn`, each holding a model folder plus a model card | None for public repos; Hugging Face sign-in for gated ones |
-| EMBER files | `derivatives/sleap/models/<id>/` in dandisets the user can read | EMBER, for embargoed data |
+| Hugging Face | Hub listing of repos tagged `sleap-nn` (up to four pages), each holding a model folder (a folder per head for top-down) plus a model card; the picker's text is matched in the page | None for public repos; Hugging Face sign-in for gated ones |
+| EMBER files | `derivatives/sleap/models/<id>/` in dandisets the user can read, one model folder or a subfolder per head | EMBER, for embargoed data |
 | Central index | A designated EMBER dandiset holding `models.json`; each entry points to a Hugging Face repo or EMBER path with version, checksum, skeleton and license | None |
 
 No SLEAP model catalogue exists yet ([`bbqs_model_zoo`](https://github.com/brain-bbqs/bbqs_model_zoo) is an empty stub), so we create the index. The browser fetches only small metadata files; weights go straight from Hugging Face or S3 to the Pennsieve container.
@@ -328,8 +359,14 @@ M1 to M4 is the end-to-end prototype with stubbed compute (about 5 to 8 weeks). 
 - [ ] **EMBER admins:** confirm every serving URL is a registered redirect URI, including PR previews and local dev. Production depends on the final hostname.
 - [ ] **EMBER data team:** approve the `derivatives/sleap/` layout; confirm drafts holding `.slp` and `.ckpt` files can be published.
 - [ ] **Proxy team:** caller auth, job API, file-type metadata on input URLs, result locations, who finishes the SLEAP Pennsieve app.
-- [ ] **Us:** final hostname (e.g. `sleap.brain-bbqs.org`).
+- [x] **Us:** hostname. The GitHub Pages default (`https://brain-bbqs.github.io/ember-sleap/`) for now; a `*.brain-bbqs.org` name later needs `public/CNAME`, `preview.yml` and a DNS record. The EMBER OAuth app's redirect URIs follow whichever is in use.
 - [ ] **Us:** a test dandiset for end-to-end save tests.
+- [ ] **EMBER data team:** does the archive accept a dotfile asset (`derivatives/sleap/.bidsignore`)? The page writes it on first save and only warns if it is refused.
+- [x] **Us / proxy team:** presigned links last 6 hours and a queued job can outlive them. Handled in [#5](https://github.com/brain-bbqs/ember-sleap/pull/5): each job input carries its asset's id, path and stable `/download/` URL, for the worker to renew the link from ([COMPUTE_API.md](COMPUTE_API.md#job-request)).
+- [ ] **Us:** opening an embargoed asset follows `/download/` with the user's token and relies on the browser dropping `Authorization` on the cross-origin redirect to S3; verify with a real embargoed dandiset.
+- [x] **Us:** an index entry and the same Hugging Face repo listed directly both appeared in the model list. Handled in [#7](https://github.com/brain-bbqs/ember-sleap/pull/7): index entries replace the direct listing of a Hugging Face or EMBER model whose every model folder they name ([MODEL_INDEX.md](MODEL_INDEX.md)).
+- [ ] **Us:** the archive upload sequence and the dandi-etag worker pool are now copied in two apps (bbqs-uploader and here, `src/lib/emberUpload.ts` and `src/lib/etagPool.ts`), which makes them candidates for `@brain-bbqs/ember-client`.
+- [ ] **Us:** `src/main.ts` refreshes tokens once however many calls need it, follows another tab's refresh or sign-out, and writes each stored setting without touching the others; sibling apps need the same, so these are candidates for `@brain-bbqs/ember-client`. A human-subjects flag that could not be read is kept apart from an unflagged one here; `createHumanSubjectsGate` in `@brain-bbqs/ui` could grow an "unknown" state for it.
 
 ## References
 
