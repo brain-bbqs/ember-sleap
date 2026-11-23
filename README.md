@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="src/assets/sleap-logo.png" width="120" alt="SLEAP logo"/>
+  <img src="src/assets/ember-sleap-logo.png" width="132" alt="SLEAP logo with an EMBER badge"/>
   <h1 align="center">EMBER SLEAP</h1>
   <p align="center">
     <a href="https://codecov.io/github/brain-bbqs/ember-sleap?branch=main"><img src="https://codecov.io/github/brain-bbqs/ember-sleap/coverage.svg?branch=main" alt="codecov"></a>
