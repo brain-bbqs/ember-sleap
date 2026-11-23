@@ -23,7 +23,7 @@ Until this API exists, the page runs against an in-browser stub (`src/lib/comput
   The proxy checks it against EMBER, so a user signs in once.
 - This is the one exception [SECURITY.md](../SECURITY.md#the-compute-proxy-exception) makes to never forwarding a user's token: the proxy may use it only to identify the user and check their access on EMBER, and must not store it or read or write EMBER with it.
 - The proxy records that user as the requester of each job, and refuses a job whose inputs or destination dandiset the user cannot read or write on EMBER.
-- CORS must allow the page's origins: `https://brain-bbqs.github.io` and any `https://*.brain-bbqs.org` (production is planned as `https://sleap.brain-bbqs.org`; PR previews are served under the same host).
+- CORS must allow the page's origin, `https://brain-bbqs.github.io`: the page is served at `https://brain-bbqs.github.io/ember-sleap/`, with PR previews under the same host. Allowing any `https://*.brain-bbqs.org` too keeps a later custom hostname working.
   Allowed methods `GET` and `POST`; allowed request headers `Authorization` and `Content-Type`.
 
 ## Endpoints
