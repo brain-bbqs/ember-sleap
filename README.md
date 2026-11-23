@@ -39,6 +39,7 @@ Try it with [`?dandiset=000398`](https://brain-bbqs.github.io/ember-sleap/?dandi
 
 ```bash
 npm ci
+apm install --frozen     # the agent skills, into .claude/skills/ and .agents/skills/ (`pipx install apm-cli`)
 npm run dev              # the app, with hot reload
 npm test                 # unit tests (add `:coverage`, or `:watch`)
 npm run test:integration # Playwright, against a fresh build

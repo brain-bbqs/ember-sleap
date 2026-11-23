@@ -26,17 +26,23 @@ The template already builds its tooling on `@brain-bbqs/config`, takes its size 
 Its shell behaviour comes from `@brain-bbqs/ui` too: `initThemeToggle` flips and stores the theme under the app's `THEME_KEY`, `renderVersion` fills the footer's version stamp, `getShellElements`, `getWhatsNewElements` and `required` back the lookups in `src/ui/elements.ts`, `initWhatsNew` renders `CHANGELOG.md` into the What's New modal and opens it from the footer link or at `#changelog`, and `bindDropzone` with `showDropzoneReject` does the dropzone's drag, click and pick plumbing, leaving `src/ui/dropzone.ts` to say what a drop or a pick means.
 The other packages are being adopted app by app in the order `docs/ADOPTION.md` there gives, so a sibling may still carry a local copy of something a package now provides: follow the package, not the copy.
 
-## Skills installed from con/skills
+## Agent skills come from `apm install`
 
-`setup-chromatic` is not kept in this repository: `apm.yml` installs it from [con/skills](https://github.com/con/skills), pinned to a commit in `apm.lock.yaml`.
-Run `apm install --frozen` before starting work to restore it into `.claude/skills/setup-chromatic/` (APM is the `apm-cli` package on PyPI).
-That copy is generated and git-ignored, so a fix to it goes to con/skills as a pull request, and the pin in `apm.yml` then moves to the merged commit.
-Report a failed restore rather than working as if the skill were loaded.
+Install agent skills the way `npm ci` installs packages: run `apm install --frozen` after every clone, and again after pulling a change to `apm.yml`, `apm.lock.yaml` or `.apm/`.
+It writes every skill into `.claude/skills/` and `.agents/skills/` (APM is the `apm-cli` package on PyPI, e.g. `pipx install apm-cli`).
+Both folders are generated and git-ignored, so never edit them: the next install overwrites what is there.
+
+- This repository's own skills live in `.apm/skills/<name>/SKILL.md`.
+  Edit them there, then run `apm install` (without `--frozen`) to redeploy them and record their new hashes in `apm.lock.yaml`, and commit both.
+- Shared skills, such as `setup-chromatic` from [con/skills](https://github.com/con/skills), are pinned to a commit in `apm.yml`.
+  A fix to one goes to its own repository as a pull request, and the pin here then moves to the merged commit.
+
+Report a failed install rather than working as if the skills were loaded.
 
 ## When the template is at fault, fix it where it came from
 
 A defect in the shell, a config that is wrong for every app, or guidance that led a setup astray belongs in [`brain-bbqs/web-app-template`](https://github.com/brain-bbqs/web-app-template), so the next app is generated with the fix already in place.
-This file and the skills under `.claude/skills/` are guidance, and every app holds a generated copy of them, so an edit here reaches this app alone.
+This file and the skills under `.apm/skills/` are guidance, and every app holds a generated copy of them, so an edit here reaches this app alone.
 Fix it here, and open a pull request against the template as well.
 
 Guidance is at fault when a step was followed as written and still produced a broken app.
@@ -45,7 +51,7 @@ A one-off mistake by whoever ran the setup is not a guidance defect, and neither
 
 Write the correction as the instruction the next reader follows, not as a story about this incident.
 Name the rule, and give just enough of the failure to show why the rule exists.
-`.claude/skills/visual-snapshots/SKILL.md` is what that looks like after the fact: a short set of rules distilled from Chromatic diffs that no code change could explain.
+`.apm/skills/visual-snapshots/SKILL.md` is what that looks like after the fact: a short set of rules distilled from Chromatic diffs that no code change could explain.
 
 ## Development guidelines
 
@@ -111,6 +117,7 @@ Name the rule, and give just enough of the failure to show why the rule exists.
 
 ```bash
 npm ci
+apm install --frozen
 npm run typecheck
 npm run lint
 npm run test:coverage

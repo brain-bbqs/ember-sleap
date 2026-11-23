@@ -1,11 +1,13 @@
-# Agent skills this repository installs from shared collections, each pinned to a commit.
-# `apm install --frozen` restores them from apm.lock.yaml into .claude/skills/, where the copies are
-# generated and git-ignored: improve a skill in its own repository, then move the pin here.
+# The agent skills this repository installs: its own, from .apm/skills/, and shared ones, each
+# pinned to a commit. `apm install --frozen` writes them all into .claude/skills/ and
+# .agents/skills/, where the copies are generated and git-ignored: edit this repository's own in
+# .apm/skills/, and improve a shared one in its own repository, then move the pin here.
 name: ember-sleap
 version: 1.0.0
 description: Agent skills this app installs from shared collections.
 targets:
   - claude
+  - agent-skills
 dependencies:
   apm:
     - git: con/skills
