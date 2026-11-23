@@ -803,8 +803,10 @@ main.workspace {
    drawn as its own dialogs are: its dark surface, and its orange for the action to take. */
 /* ------------------------------------------------------------------------------------------ */
 
+/* margin: auto centers a modal dialog; the SLEAP app's base reset zeroes every margin on the page. */
 .page-dialog {
   max-width: min(28rem, calc(100vw - 2rem));
+  margin: auto;
   padding: 1.25rem 1.5rem;
   border: 1px solid var(--sleap-border);
   border-radius: 10px;
@@ -891,4 +893,22 @@ main.workspace {
   justify-content: flex-end;
   gap: 0.5rem;
   margin-top: 0.5rem;
+}
+
+/* ------------------------------------------------------------------------------------------ */
+/* The real SLEAP app in this page (src/ui/sleapComponent.ts) */
+/* ------------------------------------------------------------------------------------------ */
+
+/* The app styles itself with Tailwind, whose rules sit in cascade layers, while the shared shell's
+   element rules (buttons, form fields, links, code) are unlayered, so they would win over the app's
+   own wherever the two meet. Inside the app, and in the menus, dialogs and tooltips it renders at
+   the end of the page (each marked data-slot="…-content"), they are rolled back to the app's. */
+:is(#sleap-root[data-component="sleap-app"], [data-slot$="-content"])
+  :is(button, input, select, textarea, a, code, label, h1, h2, h3, h4) {
+  all: revert-layer;
+}
+
+/* The app's base reset (unlayered for the app, but it reaches the page too) unbolds headings. */
+.site-header h1 {
+  font-weight: 700;
 }

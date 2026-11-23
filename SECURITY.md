@@ -23,7 +23,7 @@ Also keep an eye on:
 
 - **No third-party runtime scripts.** Nothing in `index.html` loads a CDN `<script>` tag.
   A compromised third-party script is the other realistic way a token in storage gets exfiltrated even without a bug in this app's own code, so keep it that way.
-- **Minimal runtime dependencies.** This app's are the shared `@brain-bbqs/ui`, `@brain-bbqs/utils` and `@brain-bbqs/ember-client` packages, and the Talmo Lab's `@talmolab/sleap-io.js`, which the SLEAP stand-in loads only to write a new project's `.slp` (the real component carries its own copy, so it goes with the stand-in); the embedded SLEAP component will be the next.
+- **Minimal runtime dependencies.** This app's are the shared `@brain-bbqs/ui`, `@brain-bbqs/utils` and `@brain-bbqs/ember-client` packages; the SLEAP web app itself, `@talmolab/sleap-app`, built from our fork (`brain-bbqs/sleap-app`) and pinned to a commit, which runs in the page with the same access as its own code; and the Talmo Lab's `@talmolab/sleap-io.js`, which the SLEAP stand-in loads only to write a new project's `.slp` (the real app carries its own copy, so it goes with the stand-in).
   Every added runtime dependency is something that could be compromised upstream and ship code that reads `localStorage`; don't add one without a reason.
 
 ## Handling a "clear text storage" alert on a new credential

@@ -15,7 +15,7 @@ test.describe("EMBER SLEAP shell", () => {
     await expect(page.locator(".header-logo")).toHaveAttribute("alt", "SLEAP");
     await expect(page.locator(".brand-watermark-logo")).toBeVisible();
     await expect(page.locator("#oauthSigninBtn")).toBeVisible();
-    await expect(page.locator('[data-role="start"]')).toBeVisible();
+    await expect(page.getByRole("button", { name: "New Project" })).toBeVisible();
     await expect(page.locator("#open-dialog")).toBeHidden();
 
     const footer = page.locator(".page-footer-bar");
@@ -66,22 +66,24 @@ test.describe("EMBER SLEAP shell", () => {
 
   test("boots for real when ?test names nothing to fake", async ({ page }) => {
     await page.goto("/?test");
-    await expect(page.locator('[data-role="start"]')).toBeVisible();
-    await expect(page.locator('[data-role="project"]')).toBeHidden();
+    await expect(page.locator('#sleap-root[data-component="sleap-app"]')).toBeVisible();
+    await expect(page.getByRole("button", { name: "New Project" })).toBeVisible();
   });
 
-  test("opens the EMBER picker from the start screen and the File menu, and closes it on Escape", async ({ page }) => {
+  test("opens the EMBER picker from the SLEAP app's start screen and File menu, and closes it on Escape", async ({
+    page,
+  }) => {
     await page.goto("/");
     const dialog = page.locator("#open-dialog");
-    await page.locator('[data-role="start-open"]').click();
+    await page.getByRole("button", { name: "Open Project", exact: true }).click();
     await expect(dialog).toBeVisible();
     await expect(page.locator("#open-dialog-title")).toHaveText("Open a project from EMBER");
     await expect(page.locator("#dandiset-input")).toBeFocused();
     await page.keyboard.press("Escape");
     await expect(dialog).toBeHidden();
 
-    await page.locator('[data-role="menu-file"]').click();
-    await page.locator('[data-role="menu-new"]').click();
+    await page.getByRole("menuitem", { name: "File" }).click();
+    await page.getByRole("menuitem", { name: /^New Project/ }).click();
     await expect(dialog).toBeVisible();
     await expect(page.locator("#open-dialog-title")).toHaveText("New project on EMBER");
     await page.locator("#open-dialog-close").click();

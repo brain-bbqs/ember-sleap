@@ -43,7 +43,7 @@ vi.mock("../../src/ui/sleapComponent", async (importOriginal) => {
     loadSleapComponent: async () => {
       holds.componentAsked = true;
       await firstLoad;
-      const component = await actual.loadSleapComponent();
+      const component = await actual.loadSleapComponent({ standIn: true });
       holds.componentLoaded = true;
       return component;
     },

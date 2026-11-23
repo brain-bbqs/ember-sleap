@@ -4,6 +4,7 @@ import { PRE_PAINT_PLUGIN_NAME } from "@brain-bbqs/config/pre-paint";
 // With the extension: Vite's native config loader (its future default) refuses extensionless
 // imports between config files.
 import { STORAGE_KEY } from "../src/lib/settings.ts";
+import { sleapAppPackage } from "./sleapAppPackage.ts";
 
 /**
  * The signed-in half of @brain-bbqs/config's prePaintPlugin: a returning visitor's header shows the
@@ -31,7 +32,7 @@ export default defineConfig(
   createViteConfig({
     rootDir: new URL("..", import.meta.url),
     overrides: {
-      plugins: [signedInPrePaint(STORAGE_KEY)],
+      plugins: [signedInPrePaint(STORAGE_KEY), sleapAppPackage()],
       build: {
         rolldownOptions: {
           // @talmolab/sleap-io.js imports it only to rasterize frames where a browser has no

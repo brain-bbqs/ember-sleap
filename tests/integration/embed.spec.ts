@@ -1,5 +1,6 @@
 // The embed's isolation and host-callback checks from docs/DEVELOPMENT_PLAN.md ("Validation"),
-// reached through `?test&mock_project` so no archive, sign-in or compute is involved. They run
+// reached through `?test&mock_project` (the SLEAP stand-in, on a mock project) so no archive,
+// sign-in or compute is involved. They run
 // against the stand-in today and are meant to keep passing once the real component mounts.
 import { test, expect, type Page } from "@playwright/test";
 import { STORAGE_KEY } from "../../src/lib/settings";
@@ -14,7 +15,7 @@ async function openMockProject(page: Page): Promise<void> {
 test.describe("the embedded SLEAP app", () => {
   test("mounts inside the app card without changing the page's header", async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
-    await page.goto("/?test");
+    await page.goto("/?test&stand_in");
     const before = await page.locator(".site-header").screenshot();
     await openMockProject(page);
     const after = await page.locator(".site-header").screenshot();

@@ -22,22 +22,29 @@ describe("readTestInjection", () => {
     },
   );
 
-  const none = { mockProject: false, mockPredictions: false, mockPredictionsMissing: false, mockNewProject: false };
+  const none = {
+    mockProject: false,
+    mockPredictions: false,
+    mockPredictionsMissing: false,
+    mockNewProject: false,
+    standIn: false,
+  };
 
   it("is a no-op plan for a bare ?test", () => {
     expect(readTestInjection("?test")).toEqual(none);
   });
 
   it.each([
-    ["?test&mock_project", { ...none, mockProject: true }],
-    ["?mock_project&test", { ...none, mockProject: true }],
-    ["?test&mock_project&mock_predictions", { ...none, mockProject: true, mockPredictions: true }],
+    ["?test&mock_project", { ...none, mockProject: true, standIn: true }],
+    ["?mock_project&test", { ...none, mockProject: true, standIn: true }],
+    ["?test&mock_project&mock_predictions", { ...none, mockProject: true, mockPredictions: true, standIn: true }],
     ["?test&mock_predictions", { ...none, mockPredictions: true }],
     [
       "?test&mock_project&mock_predictions&mock_predictions_missing",
-      { ...none, mockProject: true, mockPredictions: true, mockPredictionsMissing: true },
+      { ...none, mockProject: true, mockPredictions: true, mockPredictionsMissing: true, standIn: true },
     ],
-    ["?test&mock_new_project", { ...none, mockNewProject: true }],
+    ["?test&mock_new_project", { ...none, mockNewProject: true, standIn: true }],
+    ["?test&stand_in", { ...none, standIn: true }],
   ])("reads the flags in %s", (search, plan) => {
     expect(readTestInjection(search)).toEqual(plan);
   });

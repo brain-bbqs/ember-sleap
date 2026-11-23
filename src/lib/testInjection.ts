@@ -25,6 +25,9 @@ export interface TestInjection {
   /** Starts a new project on two synthesized videos, as choosing a dandiset with no SLEAP project
    * does, with the same in-memory saves, models and compute stub as `mockProject`. */
   mockNewProject: boolean;
+  /** The SLEAP stand-in in place of the real app, against the real archive and compute, so the
+   * host's own behavior can be driven through the stand-in's controls. Implied by either mock. */
+  standIn: boolean;
 }
 
 export function readTestInjection(search: string): TestInjection | null {
@@ -35,6 +38,7 @@ export function readTestInjection(search: string): TestInjection | null {
     mockPredictions: params.has("mock_predictions"),
     mockPredictionsMissing: params.has("mock_predictions_missing"),
     mockNewProject: params.has("mock_new_project"),
+    standIn: params.has("stand_in") || params.has("mock_project") || params.has("mock_new_project"),
   };
 }
 

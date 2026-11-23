@@ -20,7 +20,8 @@ Copy this file to `docs/user_tests/<tester>.md`, fill it in, and open it as a PR
 ## Starting a new project
 
 - [ ] The page opens on the SLEAP app's start screen, between the header and a footer holding only the version link (bottom left) and the Talmo Lab and CON marks (bottom right)
-- [ ] "Open Project" on a dandiset with videos but no `.slp` starts a new project on its videos, listed in the Videos panel, the first playing in the canvas
+- [ ] "Open Project" on a dandiset with videos but no `.slp` starts a new project on its videos in the SLEAP app, listed in its Videos panel, with frames showing
+- [ ] Labeling works on it as in the SLEAP web app: define a skeleton, add an instance, drag its nodes
 - [ ] "New Project" on a dandiset that has projects still starts a new one
 - [ ] Saving a new project (signed in, on a dandiset you own) writes `derivatives/sleap/sub-.../beh/..._desc-labels<FirstVideo>_pose.slp`, which the SLEAP desktop app opens with the videos listed
 

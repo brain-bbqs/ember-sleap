@@ -1,6 +1,8 @@
 // Open and save against a routed EMBER archive and S3 bucket: every request the page makes to the
 // archive is answered here, so the whole save sequence (dandi-etag hash, initialize, multipart PUT,
-// complete, validate, create asset) runs in a real browser with no real archive behind it.
+// complete, validate, create asset) runs in a real browser with no real archive behind it. The
+// page mounts the SLEAP stand-in (`?test&stand_in`), whose controls drive the host's callbacks;
+// the real app against the same kind of archive is tests/integration/sleap-app.spec.ts.
 import { createHash } from "node:crypto";
 import { test, expect, type Page, type Route } from "@playwright/test";
 import { STORAGE_KEY } from "../../src/lib/settings";
@@ -124,7 +126,7 @@ async function routeArchive(page: Page, assets: Archive["assets"]): Promise<Arch
 }
 
 async function openProject(page: Page, path: string): Promise<void> {
-  await page.goto("/?dandiset=000123");
+  await page.goto("/?dandiset=000123&test&stand_in");
   await page.locator(`.project-open[data-path="${path}"]`).click();
   await expect(role(page, "file-probe")).toContainText("HDF5 signature");
 }
@@ -137,7 +139,7 @@ test.describe("EMBER storage", () => {
       { asset_id: "a1", path: "sub-01/ses-02/labels.slp", size: 64 },
       { asset_id: "a2", path: "sub-01/ses-02/train.pkg.slp", size: 64 },
     ]);
-    await page.goto("/?dandiset=000123");
+    await page.goto("/?dandiset=000123&test&stand_in");
     await expect(page.locator("#open-status")).toHaveText("Lab data (000123): 2 projects.");
     await expect(page.locator("#oauthUsername")).toHaveText("ada");
     await page.locator('.project-open[data-path="sub-01/ses-02/train.pkg.slp"]').click();

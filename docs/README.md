@@ -8,6 +8,7 @@
 | `?test&mock_project&mock_predictions`                          | The same, with one file under "Predictions" above the app (after about a second): the mock project's own predictions | [Open](https://brain-bbqs.github.io/ember-sleap/?test&mock_project&mock_predictions)                          |
 | `?test&mock_project&mock_predictions&mock_predictions_missing` | The same; clicking the listed file says it is not on EMBER yet, with "Try again"                                     | [Open](https://brain-bbqs.github.io/ember-sleap/?test&mock_project&mock_predictions&mock_predictions_missing) |
 | `?test&mock_new_project`                                       | A new, unsaved project on two mock videos, as choosing a dandiset with no SLEAP project starts                       | [Open](https://brain-bbqs.github.io/ember-sleap/?test&mock_new_project)                                       |
+| `?test&stand_in`                                               | The SLEAP stand-in in place of the real app, against the real archive (add `&dandiset=<id>` to list one)             | [Open](https://brain-bbqs.github.io/ember-sleap/?test&stand_in)                                               |
 
 `?test` alone (without one of the above) opens on the SLEAP app's start screen as the page always does, and is a no-op that never changes anything by itself, and so are `mock_predictions` and `mock_predictions_missing` without `mock_project`.
 
@@ -24,6 +25,9 @@ The file the stub reports, `derivatives/sleap/sub-mock/beh/sub-mock_desc-predict
 The stub writes nothing, so opening a listed file serves another synthesized project like the mock one from a `data:` URL, and saving it after "Make an edit" lands as `desc-labelsTestInjectionMockProject` beside it.
 `mock_predictions_missing` makes opening any listed file find nothing there instead, as EMBER does before a worker has written it.
 The Chromatic predictions snapshots use these.
+
+Every mock mounts the SLEAP stand-in (`src/ui/sleapStandIn.ts`) rather than the real app: the mocks' synthesized files are not real `.slp` projects or videos, and the stand-in's controls are what the specs drive.
+`stand_in` mounts the stand-in on its own, with the real archive, sign-in and compute, which is how `tests/integration/ember.spec.ts` drives the host's save sequence.
 
 `mock_new_project` hands a synthesized new project to the same `create` path a dandiset with no SLEAP project takes, with the same in-memory saves, models and compute stub as `mock_project`.
 Its two videos sit at `sub-mock/beh/sub-mock_test-injection-mock-video-{1,2}.mp4` and are empty `data:` URLs no player can show, so the canvas is the same on every run.

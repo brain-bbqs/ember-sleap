@@ -56,7 +56,7 @@ import { createEntitiesPrompt } from "./ui/entitiesDialog";
 import { createOverwritePrompt } from "./ui/overwriteDialog";
 import { createPredictionsList } from "./ui/predictionsList";
 import { renderProjects } from "./ui/projectList";
-import { loadSleapComponent } from "./ui/sleapComponent";
+import { loadSleapComponent, sleapAppBaseUrl } from "./ui/sleapComponent";
 
 const shell = getShell();
 const els = getElements();
@@ -322,10 +322,12 @@ async function recheckGate(dandisetId: string): Promise<void> {
 
 /** The app, mounted with nothing open (its start screen) at boot and again after a project closes. */
 function ensureApp(): Promise<SleapAppHandle> {
-  mounting ??= loadSleapComponent().then((loaded) => {
+  mounting ??= loadSleapComponent({ standIn: injection?.standIn }).then((loaded) => {
     sleapVersion = loaded.version;
+    // Which one is mounted, so the page's styles can stand back from the real app's (src/style.css).
+    els.sleapRoot.dataset.component = loaded.standIn ? "stand-in" : "sleap-app";
     app = loaded.mountSleapApp(els.sleapRoot, {
-      assetBaseUrl: new URL("sleap-assets/", document.baseURI).href,
+      assetBaseUrl: sleapAppBaseUrl(),
       compute: { builtIn: false },
       pageEffects: EMBEDDED_PAGE_EFFECTS,
       host,
