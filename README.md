@@ -12,7 +12,9 @@ Label, train and predict with [SLEAP](https://sleap.ai) on data in the [EMBER ar
 
 ---
 
-Built & maintained by the [Center for Open Neuroscience](https://centerforopenneuroscience.org).
+[SLEAP Web App](https://app.sleap.ai) created and maintained by the [Talmo Lab](https://talmolab.org/).
+
+Webkit wrapper and EMBER integration maintained by the [Center for Open Neuroscience](https://centerforopenneuroscience.org).
 
 Funded by the [National Institutes of Health (NIH)](https://www.nih.gov/brain/research/data-knowledge-resources) grant [R24 MH136632](https://reporter.nih.gov/search/kDbcoCvju0ymZz0fI3zvhA/project-details/10888659) as a part of the [Brain Behavior Quantification and Synchronization (BBQS)](https://brain-bbqs.org/) consortium.
 
