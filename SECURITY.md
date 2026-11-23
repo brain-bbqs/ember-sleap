@@ -58,4 +58,4 @@ Do the same here: if such a service ever needs to know something it can't resolv
   One refresh runs at a time however many calls are waiting on it, since EMBER rotates refresh tokens, and a tab follows another tab's refresh or sign-out instead of writing its own tokens back over it.
 - **Sign-out:** a best-effort revocation of the access token at EMBER's `/oauth/revoke_token/`, and the stored tokens are cleared.
 
-The `frontend-security` skill (`.apm/skills/frontend-security/SKILL.md`) is the triggerable summary of this file; update both together.
+The `frontend-security` skill, installed by `apm install` from `brain-bbqs/bbqs-web-components`, is the triggerable summary of this file; a change here that it should reflect goes to that repository too.

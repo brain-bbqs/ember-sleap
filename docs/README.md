@@ -35,4 +35,4 @@ This is a real request to the archive, not a test injection.
 None at present.
 Add a note here for any expected warning or failed request a person might otherwise report as a bug.
 
-Add a row to the injection table for every injection the app grows, and read the `visual-snapshots` skill (`.apm/skills/visual-snapshots/SKILL.md`) before adding one.
+Add a row to the injection table for every injection the app grows, and read the `visual-snapshots` skill (installed by `apm install --frozen`) before adding one.

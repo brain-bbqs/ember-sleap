@@ -28,21 +28,19 @@ The other packages are being adopted app by app in the order `docs/ADOPTION.md` 
 
 ## Agent skills come from `apm install`
 
-Install agent skills the way `npm ci` installs packages: run `apm install --frozen` after every clone, and again after pulling a change to `apm.yml`, `apm.lock.yaml` or `.apm/`.
+Install agent skills the way `npm ci` installs packages: run `apm install --frozen` after every clone, and again after pulling a change to `apm.yml` or `apm.lock.yaml`.
 It writes every skill into `.claude/skills/` and `.agents/skills/` (APM is the `apm-cli` package on PyPI, e.g. `pipx install apm-cli`).
-Both folders are generated and git-ignored, so never edit them: the next install overwrites what is there.
+Both folders are generated and git-ignored, and no copy of a skill is committed here: never edit them, since the next install overwrites what is there.
 
-- This repository's own skills live in `.apm/skills/<name>/SKILL.md`.
-  Edit them there, then run `apm install` (without `--frozen`) to redeploy them and record their new hashes in `apm.lock.yaml`, and commit both.
-- Shared skills, such as `setup-chromatic` from [con/skills](https://github.com/con/skills), are pinned to a commit in `apm.yml`.
-  A fix to one goes to its own repository as a pull request, and the pin here then moves to the merged commit.
+Each skill is an APM package pinned to a commit in `apm.yml`: `frontend-security`, `reuse-license-setup` and `visual-snapshots` from `skills/` in [`brain-bbqs/bbqs-web-components`](https://github.com/brain-bbqs/bbqs-web-components), and `setup-chromatic` from [con/skills](https://github.com/con/skills).
+A fix to one goes to its own repository as a pull request; the pin here then moves to the merged commit, with `apm install <owner>/<repo>/skills/<name>#<full-commit-SHA>`, and `apm.yml` and `apm.lock.yaml` are committed together.
 
 Report a failed install rather than working as if the skills were loaded.
 
 ## When the template is at fault, fix it where it came from
 
 A defect in the shell, a config that is wrong for every app, or guidance that led a setup astray belongs in [`brain-bbqs/web-app-template`](https://github.com/brain-bbqs/web-app-template), so the next app is generated with the fix already in place.
-This file and the skills under `.apm/skills/` are guidance, and every app holds a generated copy of them, so an edit here reaches this app alone.
+This file is guidance, and every app holds a generated copy of it, so an edit here reaches this app alone.
 Fix it here, and open a pull request against the template as well.
 
 Guidance is at fault when a step was followed as written and still produced a broken app.
@@ -51,7 +49,7 @@ A one-off mistake by whoever ran the setup is not a guidance defect, and neither
 
 Write the correction as the instruction the next reader follows, not as a story about this incident.
 Name the rule, and give just enough of the failure to show why the rule exists.
-`.apm/skills/visual-snapshots/SKILL.md` is what that looks like after the fact: a short set of rules distilled from Chromatic diffs that no code change could explain.
+The `visual-snapshots` skill is what that looks like after the fact: a short set of rules distilled from Chromatic diffs that no code change could explain.
 
 ## Development guidelines
 

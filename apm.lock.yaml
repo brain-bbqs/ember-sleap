@@ -1,6 +1,72 @@
 lockfile_version: '1'
 apm_version: 0.31.0
 dependencies:
+- repo_url: brain-bbqs/bbqs-web-components
+  name: frontend-security
+  host: github.com
+  resolved_commit: 66c335e3612f4fa977a85a92210f23158a12608d
+  resolved_ref: 66c335e3612f4fa977a85a92210f23158a12608d
+  version: 0.1.0
+  virtual_path: skills/frontend-security
+  is_virtual: true
+  package_type: hybrid
+  deployed_files:
+  - .agents/skills/frontend-security
+  - .agents/skills/frontend-security/SKILL.md
+  - .agents/skills/frontend-security/apm.yml
+  - .claude/skills/frontend-security
+  - .claude/skills/frontend-security/SKILL.md
+  - .claude/skills/frontend-security/apm.yml
+  deployed_file_hashes:
+    .agents/skills/frontend-security/SKILL.md: sha256:86e920415326f37f006c2e5fafbbe1939440787e91c64ead56f6c1f810caa617
+    .agents/skills/frontend-security/apm.yml: sha256:bf7ed34101378b51225f94538a3e529359ced48fb0e7269e501c26a6e31459db
+    .claude/skills/frontend-security/SKILL.md: sha256:86e920415326f37f006c2e5fafbbe1939440787e91c64ead56f6c1f810caa617
+    .claude/skills/frontend-security/apm.yml: sha256:bf7ed34101378b51225f94538a3e529359ced48fb0e7269e501c26a6e31459db
+  content_hash: sha256:0ef2aa7df34a7065d83e355f72b9153799c289aca84d372caed96f49dba556a9
+- repo_url: brain-bbqs/bbqs-web-components
+  name: reuse-license-setup
+  host: github.com
+  resolved_commit: 66c335e3612f4fa977a85a92210f23158a12608d
+  resolved_ref: 66c335e3612f4fa977a85a92210f23158a12608d
+  version: 0.1.0
+  virtual_path: skills/reuse-license-setup
+  is_virtual: true
+  package_type: hybrid
+  deployed_files:
+  - .agents/skills/reuse-license-setup
+  - .agents/skills/reuse-license-setup/SKILL.md
+  - .agents/skills/reuse-license-setup/apm.yml
+  - .claude/skills/reuse-license-setup
+  - .claude/skills/reuse-license-setup/SKILL.md
+  - .claude/skills/reuse-license-setup/apm.yml
+  deployed_file_hashes:
+    .agents/skills/reuse-license-setup/SKILL.md: sha256:3fdddbca9f92cc18d88880861a6e4e60c38a3b2e7acbe33d87b41dd20e189d0c
+    .agents/skills/reuse-license-setup/apm.yml: sha256:1b3e1b89191d81543833e7d13459599e6d06256aab8a7b4cad6226597ca66847
+    .claude/skills/reuse-license-setup/SKILL.md: sha256:3fdddbca9f92cc18d88880861a6e4e60c38a3b2e7acbe33d87b41dd20e189d0c
+    .claude/skills/reuse-license-setup/apm.yml: sha256:1b3e1b89191d81543833e7d13459599e6d06256aab8a7b4cad6226597ca66847
+  content_hash: sha256:3f11ef1cc0442e025d0ddab2b5339812f38645c7d9782703195e584f26bfa886
+- repo_url: brain-bbqs/bbqs-web-components
+  name: visual-snapshots
+  host: github.com
+  resolved_commit: 66c335e3612f4fa977a85a92210f23158a12608d
+  resolved_ref: 66c335e3612f4fa977a85a92210f23158a12608d
+  version: 0.1.0
+  virtual_path: skills/visual-snapshots
+  is_virtual: true
+  package_type: hybrid
+  deployed_files:
+  - .agents/skills/visual-snapshots
+  - .agents/skills/visual-snapshots/SKILL.md
+  - .agents/skills/visual-snapshots/apm.yml
+  - .claude/skills/visual-snapshots
+  - .claude/skills/visual-snapshots/SKILL.md
+  - .claude/skills/visual-snapshots/apm.yml
+  deployed_file_hashes:
+    .agents/skills/visual-snapshots/SKILL.md: sha256:6076fba8f6dac709b501511b5b05e88c194414d94a7e8f8e1069df03f4f997d6
+    .agents/skills/visual-snapshots/apm.yml: sha256:5ff7073728d5a7d5096c6b407c7bfb85feee1cce8a4c02849356ea5315e26d7f
+    .claude/skills/visual-snapshots/SKILL.md: sha256:6076fba8f6dac709b501511b5b05e88c194414d94a7e8f8e1069df03f4f997d6
+    .claude/skills/visual-snapshots/apm.yml: sha256:5ff7073728d5a7d5096c6b407c7bfb85feee1cce8a4c02849356ea5315e26d7f
+  content_hash: sha256:8fe2b60f62fa31b8183879f833abe098745466cc96271c38cd51e2702460d055
 - repo_url: con/skills
   name: con-skills
   host: github.com
@@ -104,6 +170,60 @@ dependencies:
   skill_subset:
   - setup-chromatic
 deployments:
+- kind: project-relative
+  target: agent-skills
+  value: .agents/skills/frontend-security
+  runtime: null
+  scope: project
+  owners:
+  - brain-bbqs/bbqs-web-components/skills/frontend-security
+  active_owner: brain-bbqs/bbqs-web-components/skills/frontend-security
+  content_hash: null
+- kind: project-relative
+  target: agent-skills
+  value: .agents/skills/frontend-security/SKILL.md
+  runtime: null
+  scope: project
+  owners:
+  - brain-bbqs/bbqs-web-components/skills/frontend-security
+  active_owner: brain-bbqs/bbqs-web-components/skills/frontend-security
+  content_hash: sha256:86e920415326f37f006c2e5fafbbe1939440787e91c64ead56f6c1f810caa617
+- kind: project-relative
+  target: agent-skills
+  value: .agents/skills/frontend-security/apm.yml
+  runtime: null
+  scope: project
+  owners:
+  - brain-bbqs/bbqs-web-components/skills/frontend-security
+  active_owner: brain-bbqs/bbqs-web-components/skills/frontend-security
+  content_hash: sha256:bf7ed34101378b51225f94538a3e529359ced48fb0e7269e501c26a6e31459db
+- kind: project-relative
+  target: agent-skills
+  value: .agents/skills/reuse-license-setup
+  runtime: null
+  scope: project
+  owners:
+  - brain-bbqs/bbqs-web-components/skills/reuse-license-setup
+  active_owner: brain-bbqs/bbqs-web-components/skills/reuse-license-setup
+  content_hash: null
+- kind: project-relative
+  target: agent-skills
+  value: .agents/skills/reuse-license-setup/SKILL.md
+  runtime: null
+  scope: project
+  owners:
+  - brain-bbqs/bbqs-web-components/skills/reuse-license-setup
+  active_owner: brain-bbqs/bbqs-web-components/skills/reuse-license-setup
+  content_hash: sha256:3fdddbca9f92cc18d88880861a6e4e60c38a3b2e7acbe33d87b41dd20e189d0c
+- kind: project-relative
+  target: agent-skills
+  value: .agents/skills/reuse-license-setup/apm.yml
+  runtime: null
+  scope: project
+  owners:
+  - brain-bbqs/bbqs-web-components/skills/reuse-license-setup
+  active_owner: brain-bbqs/bbqs-web-components/skills/reuse-license-setup
+  content_hash: sha256:1b3e1b89191d81543833e7d13459599e6d06256aab8a7b4cad6226597ca66847
 - kind: project-relative
   target: agent-skills
   value: .agents/skills/setup-chromatic
@@ -312,13 +432,40 @@ deployments:
   active_owner: con/skills
   content_hash: sha256:af1a957f8a56299b548f25037d703e5c269657612683d8fd5c3c2c9fe1f7e719
 - kind: project-relative
+  target: agent-skills
+  value: .agents/skills/visual-snapshots
+  runtime: null
+  scope: project
+  owners:
+  - brain-bbqs/bbqs-web-components/skills/visual-snapshots
+  active_owner: brain-bbqs/bbqs-web-components/skills/visual-snapshots
+  content_hash: null
+- kind: project-relative
+  target: agent-skills
+  value: .agents/skills/visual-snapshots/SKILL.md
+  runtime: null
+  scope: project
+  owners:
+  - brain-bbqs/bbqs-web-components/skills/visual-snapshots
+  active_owner: brain-bbqs/bbqs-web-components/skills/visual-snapshots
+  content_hash: sha256:6076fba8f6dac709b501511b5b05e88c194414d94a7e8f8e1069df03f4f997d6
+- kind: project-relative
+  target: agent-skills
+  value: .agents/skills/visual-snapshots/apm.yml
+  runtime: null
+  scope: project
+  owners:
+  - brain-bbqs/bbqs-web-components/skills/visual-snapshots
+  active_owner: brain-bbqs/bbqs-web-components/skills/visual-snapshots
+  content_hash: sha256:5ff7073728d5a7d5096c6b407c7bfb85feee1cce8a4c02849356ea5315e26d7f
+- kind: project-relative
   target: claude
   value: .claude/skills/frontend-security
   runtime: null
   scope: project
   owners:
-  - .
-  active_owner: .
+  - brain-bbqs/bbqs-web-components/skills/frontend-security
+  active_owner: brain-bbqs/bbqs-web-components/skills/frontend-security
   content_hash: null
 - kind: project-relative
   target: claude
@@ -326,17 +473,26 @@ deployments:
   runtime: null
   scope: project
   owners:
-  - .
-  active_owner: .
+  - brain-bbqs/bbqs-web-components/skills/frontend-security
+  active_owner: brain-bbqs/bbqs-web-components/skills/frontend-security
   content_hash: sha256:86e920415326f37f006c2e5fafbbe1939440787e91c64ead56f6c1f810caa617
+- kind: project-relative
+  target: claude
+  value: .claude/skills/frontend-security/apm.yml
+  runtime: null
+  scope: project
+  owners:
+  - brain-bbqs/bbqs-web-components/skills/frontend-security
+  active_owner: brain-bbqs/bbqs-web-components/skills/frontend-security
+  content_hash: sha256:bf7ed34101378b51225f94538a3e529359ced48fb0e7269e501c26a6e31459db
 - kind: project-relative
   target: claude
   value: .claude/skills/reuse-license-setup
   runtime: null
   scope: project
   owners:
-  - .
-  active_owner: .
+  - brain-bbqs/bbqs-web-components/skills/reuse-license-setup
+  active_owner: brain-bbqs/bbqs-web-components/skills/reuse-license-setup
   content_hash: null
 - kind: project-relative
   target: claude
@@ -344,9 +500,18 @@ deployments:
   runtime: null
   scope: project
   owners:
-  - .
-  active_owner: .
+  - brain-bbqs/bbqs-web-components/skills/reuse-license-setup
+  active_owner: brain-bbqs/bbqs-web-components/skills/reuse-license-setup
   content_hash: sha256:3fdddbca9f92cc18d88880861a6e4e60c38a3b2e7acbe33d87b41dd20e189d0c
+- kind: project-relative
+  target: claude
+  value: .claude/skills/reuse-license-setup/apm.yml
+  runtime: null
+  scope: project
+  owners:
+  - brain-bbqs/bbqs-web-components/skills/reuse-license-setup
+  active_owner: brain-bbqs/bbqs-web-components/skills/reuse-license-setup
+  content_hash: sha256:1b3e1b89191d81543833e7d13459599e6d06256aab8a7b4cad6226597ca66847
 - kind: project-relative
   target: claude
   value: .claude/skills/setup-chromatic
@@ -560,8 +725,8 @@ deployments:
   runtime: null
   scope: project
   owners:
-  - .
-  active_owner: .
+  - brain-bbqs/bbqs-web-components/skills/visual-snapshots
+  active_owner: brain-bbqs/bbqs-web-components/skills/visual-snapshots
   content_hash: null
 - kind: project-relative
   target: claude
@@ -569,80 +734,15 @@ deployments:
   runtime: null
   scope: project
   owners:
-  - .
-  active_owner: .
-  content_hash: sha256:c43dafc731231ff5f8551428f7d045aa2fa15c6d1fcd18cc9e03d75215263b8d
+  - brain-bbqs/bbqs-web-components/skills/visual-snapshots
+  active_owner: brain-bbqs/bbqs-web-components/skills/visual-snapshots
+  content_hash: sha256:6076fba8f6dac709b501511b5b05e88c194414d94a7e8f8e1069df03f4f997d6
 - kind: project-relative
-  target: legacy
-  value: .agents/skills/frontend-security
+  target: claude
+  value: .claude/skills/visual-snapshots/apm.yml
   runtime: null
   scope: project
   owners:
-  - .
-  active_owner: .
-  content_hash: null
-- kind: project-relative
-  target: legacy
-  value: .agents/skills/frontend-security/SKILL.md
-  runtime: null
-  scope: project
-  owners:
-  - .
-  active_owner: .
-  content_hash: sha256:86e920415326f37f006c2e5fafbbe1939440787e91c64ead56f6c1f810caa617
-- kind: project-relative
-  target: legacy
-  value: .agents/skills/reuse-license-setup
-  runtime: null
-  scope: project
-  owners:
-  - .
-  active_owner: .
-  content_hash: null
-- kind: project-relative
-  target: legacy
-  value: .agents/skills/reuse-license-setup/SKILL.md
-  runtime: null
-  scope: project
-  owners:
-  - .
-  active_owner: .
-  content_hash: sha256:3fdddbca9f92cc18d88880861a6e4e60c38a3b2e7acbe33d87b41dd20e189d0c
-- kind: project-relative
-  target: legacy
-  value: .agents/skills/visual-snapshots
-  runtime: null
-  scope: project
-  owners:
-  - .
-  active_owner: .
-  content_hash: null
-- kind: project-relative
-  target: legacy
-  value: .agents/skills/visual-snapshots/SKILL.md
-  runtime: null
-  scope: project
-  owners:
-  - .
-  active_owner: .
-  content_hash: sha256:c43dafc731231ff5f8551428f7d045aa2fa15c6d1fcd18cc9e03d75215263b8d
-local_deployed_files:
-- .agents/skills/frontend-security
-- .agents/skills/frontend-security/SKILL.md
-- .agents/skills/reuse-license-setup
-- .agents/skills/reuse-license-setup/SKILL.md
-- .agents/skills/visual-snapshots
-- .agents/skills/visual-snapshots/SKILL.md
-- .claude/skills/frontend-security
-- .claude/skills/frontend-security/SKILL.md
-- .claude/skills/reuse-license-setup
-- .claude/skills/reuse-license-setup/SKILL.md
-- .claude/skills/visual-snapshots
-- .claude/skills/visual-snapshots/SKILL.md
-local_deployed_file_hashes:
-  .agents/skills/frontend-security/SKILL.md: sha256:86e920415326f37f006c2e5fafbbe1939440787e91c64ead56f6c1f810caa617
-  .agents/skills/reuse-license-setup/SKILL.md: sha256:3fdddbca9f92cc18d88880861a6e4e60c38a3b2e7acbe33d87b41dd20e189d0c
-  .agents/skills/visual-snapshots/SKILL.md: sha256:c43dafc731231ff5f8551428f7d045aa2fa15c6d1fcd18cc9e03d75215263b8d
-  .claude/skills/frontend-security/SKILL.md: sha256:86e920415326f37f006c2e5fafbbe1939440787e91c64ead56f6c1f810caa617
-  .claude/skills/reuse-license-setup/SKILL.md: sha256:3fdddbca9f92cc18d88880861a6e4e60c38a3b2e7acbe33d87b41dd20e189d0c
-  .claude/skills/visual-snapshots/SKILL.md: sha256:c43dafc731231ff5f8551428f7d045aa2fa15c6d1fcd18cc9e03d75215263b8d
+  - brain-bbqs/bbqs-web-components/skills/visual-snapshots
+  active_owner: brain-bbqs/bbqs-web-components/skills/visual-snapshots
+  content_hash: sha256:5ff7073728d5a7d5096c6b407c7bfb85feee1cce8a4c02849356ea5315e26d7f
