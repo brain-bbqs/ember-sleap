@@ -11,7 +11,7 @@ import {
 import {
   createEmberStorage,
   NEW_PROJECT_NAME,
-  type EmberStorage,
+  notOnEmberYet,
   type EmberStorageOptions,
   type OverwriteChoice,
 } from "../../src/lib/emberStorage";
@@ -59,14 +59,6 @@ function setup(overrides: Partial<EmberStorageOptions> = {}) {
 }
 
 const ref = (path: string, dandisetId = "000398") => toHostRef({ dandisetId, path });
-
-/** The dandiset and asset a link is renewed from, or null for a link the storage did not hand out. */
-async function assetBehind(storage: EmberStorage, url: string): Promise<[string, string] | null> {
-  const before = resolveUrl.mock.calls.length;
-  await storage.refreshUrl({ url, fileType: "slp", name: "x" });
-  const call = resolveUrl.mock.calls[before];
-  return call ? [call[0].dandisetId, call[1]] : null;
-}
 const numbered = (path: string, n: number) => path.replace("_pose.", `${n}_pose.`);
 const file = new Blob(["labels"]);
 /** The draft's asset paths: the derivative dataset's files to begin with, then whatever is put. */
@@ -107,7 +99,16 @@ describe("open", () => {
     });
     expect(options.config).toHaveBeenCalledWith("000398");
     expect(resolveUrl).toHaveBeenCalledWith(cfgFor("000398"), "a1", options.fetch);
-    expect(await assetBehind(storage, "https://s3.test/a1?sig=1")).toEqual(["000398", "a1"]);
+    expect(storage.describe("https://s3.test/a1?sig=1")).toEqual({
+      dandisetId: "000398",
+      assetId: "a1",
+      path: "sub-NONE/train.pkg.slp",
+      downloadUrl: "https://api.test/api/assets/a1/download/",
+    });
+  });
+
+  it("describes no link it did not hand out", () => {
+    expect(setup().storage.describe("https://elsewhere.test/x")).toBe(null);
   });
 });
 
@@ -120,7 +121,7 @@ describe("startProject", () => {
     { asset_id: "v5", path: "sub-03/behavior/top.mp4", size: 5, fileType: "mp4" },
   ];
 
-  it("resolves every video to a link it can renew, recorded by its path, belonging where the first is", async () => {
+  it("resolves every video to a link it can renew and describe, recorded by its path, belonging where the first is", async () => {
     const { storage } = setup();
     const request = await storage.startProject("000398", videos);
     expect(request.name).toBe(NEW_PROJECT_NAME);
@@ -131,7 +132,7 @@ describe("startProject", () => {
     expect(new Set(request.videos.map((v) => v.url)).size).toBe(videos.length);
     expect(resolveUrl).toHaveBeenCalledTimes(videos.length);
     for (const [i, video] of request.videos.entries()) {
-      expect(await assetBehind(storage, video.url)).toEqual(["000398", videos[i].asset_id]);
+      expect(storage.describe(video.url)).toMatchObject({ dandisetId: "000398", assetId: videos[i].asset_id });
     }
   });
 
@@ -162,6 +163,54 @@ describe("startProject", () => {
     const request = await storage.startProject("000398", videos);
     const saved = await storage.save(file, request.name, request.ref);
     expect(saved.ref).toEqual(ref("derivatives/sleap/sub-01/ses-01/beh/sub-01_ses-01_desc-labelsBehaviorTop_pose.slp"));
+  });
+});
+
+describe("openPath", () => {
+  const PREDICTIONS = "derivatives/sleap/sub-01/beh/sub-01_desc-predictionsCamTop_pose.slp";
+
+  it("looks the asset up by its path and resolves it as a listed project is, so it can be renewed and named", async () => {
+    draft.add(PREDICTIONS);
+    const { options, storage } = setup();
+    const opened = await storage.openPath("000398", PREDICTIONS);
+    expect(opened).toEqual({
+      url: "https://s3.test/present?sig=1",
+      fileType: "slp",
+      name: "sub-01_desc-predictionsCamTop_pose.slp",
+      ref: ref(PREDICTIONS),
+    });
+    expect(findByPath).toHaveBeenCalledWith(cfgFor("000398"), PREDICTIONS);
+    expect(resolveUrl).toHaveBeenCalledWith(cfgFor("000398"), "present", options.fetch);
+    expect(storage.describe(opened.url)).toEqual({
+      dandisetId: "000398",
+      assetId: "present",
+      path: PREDICTIONS,
+      downloadUrl: "https://api.test/api/assets/present/download/",
+    });
+    expect((await storage.refreshUrl({ ...opened })).url).toBe("https://s3.test/present?sig=2");
+  });
+
+  it("opens a package as a package", async () => {
+    const path = "derivatives/sleap/sub-01/beh/sub-01_desc-predictionsCamTop_pose.pkg.slp";
+    draft.add(path);
+    expect((await setup().storage.openPath("000398", path)).fileType).toBe("pkg.slp");
+  });
+
+  it("says a file not on EMBER yet may still be being written, resolving nothing", async () => {
+    const { storage } = setup();
+    await expect(storage.openPath("000398", PREDICTIONS)).rejects.toThrow(new Error(notOnEmberYet(PREDICTIONS)));
+    expect(notOnEmberYet(PREDICTIONS)).toBe(
+      `${PREDICTIONS} is not on EMBER yet: the job may still be writing it. Try again in a moment.`,
+    );
+    expect(resolveUrl).not.toHaveBeenCalled();
+  });
+
+  it("refuses a path naming no SLEAP project before asking the archive", async () => {
+    const { options, storage } = setup();
+    await expect(storage.openPath("000398", "derivatives/sleap/sub-01/beh/x.nwb")).rejects.toThrow(
+      "derivatives/sleap/sub-01/beh/x.nwb is not a SLEAP project (.slp or .pkg.slp).",
+    );
+    expect(options.config).not.toHaveBeenCalled();
   });
 });
 
@@ -371,14 +420,21 @@ describe("save", () => {
     ]);
   });
 
-  it("hands the saved file back by a fresh link it can renew", async () => {
+  it("hands the saved file back by a fresh link it can describe and renew", async () => {
     const { storage } = setup();
     const target = "derivatives/sleap/sub-01/beh/sub-01_desc-labelsX_pose.pkg.slp";
     const { file: saved } = await storage.save(file, "x.pkg.slp", ref("sub-01/x.pkg.slp"));
     expect(saved).toEqual({ url: "https://s3.test/put?sig=1", fileType: "pkg.slp", name: baseName(target) });
+    const archive = {
+      dandisetId: "000398",
+      assetId: "put",
+      path: target,
+      downloadUrl: "https://api.test/api/assets/put/download/",
+    };
+    expect(storage.describe(saved.url)).toEqual(archive);
     const fresh = await storage.refreshUrl(saved);
     expect(fresh.url).toBe("https://s3.test/put?sig=2");
-    expect(await assetBehind(storage, fresh.url)).toEqual(["000398", "put"]);
+    expect(storage.describe(fresh.url)).toEqual(archive);
   });
 
   it("names the saved file by its asset's download endpoint when no link can be had, and the save stands", async () => {
@@ -387,7 +443,7 @@ describe("save", () => {
     const { ref: saved, file: written } = await storage.save(file, "x.slp", ref("sub-01/x.slp"));
     expect(saved).toEqual(ref("derivatives/sleap/sub-01/beh/sub-01_desc-labelsX_pose.slp"));
     expect(written.url).toBe("https://api.test/api/assets/put/download/");
-    expect(await assetBehind(storage, written.url)).toEqual(["000398", "put"]);
+    expect(storage.describe(written.url)?.path).toBe("derivatives/sleap/sub-01/beh/sub-01_desc-labelsX_pose.slp");
   });
 
   it("warns on the console when no warning callback is given", async () => {
@@ -396,6 +452,138 @@ describe("save", () => {
     const { storage } = setup({ onWarning: undefined });
     await storage.save(file, "x.slp", ref("sub-01/x.slp"));
     expect(warn).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("saveTrainingPackage", () => {
+  const now = () => new Date("2026-11-22T15:30:00Z");
+  const beside = (word: string, stamp: string) =>
+    `derivatives/sleap/sub-01/ses-02/beh/sub-01_ses-02_desc-trainingset${word}${stamp}_pose.pkg.slp`;
+
+  it("keeps the labels beside the project as a package named for the time, and hands it back", async () => {
+    const hash = vi.fn();
+    const { options, storage } = setup({ now, hash });
+    const target = beside("CamTop", "20261122153000");
+    expect(await storage.saveTrainingPackage(file, ref("sub-01/ses-02/beh/cam-top.slp"))).toEqual({
+      ref: ref(target),
+      file: { url: "https://s3.test/put?sig=1", fileType: "pkg.slp", name: baseName(target) },
+    });
+    expect(put).toHaveBeenCalledWith(cfgFor("000398"), target, file, { onProgress: options.onProgress, hash });
+    expect(storage.describe("https://s3.test/put?sig=1")?.path).toBe(target);
+    expect(options.askOverwrite).not.toHaveBeenCalled();
+  });
+
+  it("keeps one beside a labels file already saved, under its word", async () => {
+    const { storage } = setup({ now });
+    const source = "derivatives/sleap/sub-01/ses-02/beh/sub-01_ses-02_desc-labelsCamTop_pose.slp";
+    expect((await storage.saveTrainingPackage(file, ref(source))).ref).toEqual(ref(beside("CamTop", "20261122153000")));
+  });
+
+  it("names two packages sent within one second apart", async () => {
+    const { storage } = setup({ now });
+    const project = ref("sub-01/ses-02/beh/cam-top.slp");
+    await storage.saveTrainingPackage(file, project);
+    await storage.saveTrainingPackage(file, project);
+    expect(put.mock.calls.map((c) => c[1]).filter((p) => p.includes("trainingset"))).toEqual([
+      beside("CamTop", "20261122153000"),
+      beside("CamTop", "20261122153001"),
+    ]);
+  });
+
+  it("names a package by the clock when none is given", async () => {
+    const { storage } = setup();
+    const { file: saved } = await storage.saveTrainingPackage(file, ref("sub-01/x.slp"));
+    expect(saved.name).toMatch(/^sub-01_desc-trainingsetX\d{14}_pose\.pkg\.slp$/);
+  });
+
+  it("asks for a subject when the project's path names none, and stops when given none", async () => {
+    const askEntities = vi.fn().mockResolvedValueOnce({ sub: "m3" }).mockResolvedValueOnce(null);
+    const { storage } = setup({ now, askEntities });
+    expect((await storage.saveTrainingPackage(file, ref("labels/labels.slp"))).ref).toEqual(
+      ref("derivatives/sleap/sub-m3/beh/sub-m3_desc-trainingset20261122153000_pose.pkg.slp"),
+    );
+    await expect(storage.saveTrainingPackage(file, ref("other/labels.slp"))).rejects.toThrow("Save cancelled");
+    expect(askEntities.mock.calls).toEqual([["labels/labels.slp"], ["other/labels.slp"]]);
+    expect(put.mock.calls.filter((c) => c[1].includes("trainingset")).length).toBe(1);
+  });
+
+  it("asks a source's subject once, for its saves and packages alike, even while a save is running", async () => {
+    const askEntities = vi.fn().mockResolvedValueOnce({ sub: "01" }).mockResolvedValue({ sub: "02" });
+    const { storage } = setup({ now, askEntities });
+    const project = ref("recordings/cam-top.slp");
+    const [saved, packaged] = await Promise.all([
+      storage.save(file, "cam-top.slp", project),
+      storage.saveTrainingPackage(file, project),
+    ]);
+    const again = await storage.saveTrainingPackage(file, project);
+    expect(askEntities).toHaveBeenCalledTimes(1);
+    expect([saved, packaged, again].map((s) => s.ref)).toEqual([
+      ref("derivatives/sleap/sub-01/beh/sub-01_desc-labelsCamTop_pose.slp"),
+      ref("derivatives/sleap/sub-01/beh/sub-01_desc-trainingsetCamTop20261122153000_pose.pkg.slp"),
+      ref("derivatives/sleap/sub-01/beh/sub-01_desc-trainingsetCamTop20261122153001_pose.pkg.slp"),
+    ]);
+  });
+
+  it("asks again for a source in another dandiset", async () => {
+    const askEntities = vi.fn(() => Promise.resolve({ sub: "01" }));
+    const { storage } = setup({ now, askEntities });
+    await storage.saveTrainingPackage(file, ref("cam.slp", "000398"));
+    await storage.saveTrainingPackage(file, ref("cam.slp", "000399"));
+    expect(askEntities).toHaveBeenCalledTimes(2);
+  });
+
+  it("moves past a package another page already named for the same second, rather than going over it", async () => {
+    const { storage } = setup({ now });
+    draft.add(beside("CamTop", "20261122153000"));
+    draft.add(beside("CamTop", "20261122153001"));
+    const { ref: packaged } = await storage.saveTrainingPackage(file, ref("sub-01/ses-02/beh/cam-top.slp"));
+    expect(packaged).toEqual(ref(beside("CamTop", "20261122153002")));
+    expect(findByPrefix).toHaveBeenCalledWith(
+      cfgFor("000398"),
+      "derivatives/sleap/sub-01/ses-02/beh/sub-01_ses-02_desc-trainingsetCamTop",
+    );
+    expect(put.mock.calls.map((c) => c[1])).not.toContain(beside("CamTop", "20261122153000"));
+  });
+
+  it("stops before uploading when it cannot tell which names are taken", async () => {
+    findByPrefix.mockRejectedValueOnce(new Error("listing failed"));
+    const { storage } = setup({ now });
+    await expect(storage.saveTrainingPackage(file, ref("sub-01/cam.slp"))).rejects.toThrow("listing failed");
+    expect(put).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["no EMBER location", {}, undefined, "Only a project opened from EMBER"],
+    ["saving held back", { saveRefusal: () => "Confirm the notice." }, ref("sub-01/x.slp"), "Confirm the notice."],
+    [
+      "no one signed in",
+      { config: (id: string) => Promise.resolve(cfgFor(id, "")) },
+      ref("sub-01/x.slp"),
+      "Sign in with EMBER to save.",
+    ],
+  ])("refuses as a save would, with %s", async (_, overrides, project, message) => {
+    const { storage } = setup(overrides);
+    await expect(storage.saveTrainingPackage(file, project)).rejects.toThrow(message);
+    expect(put).not.toHaveBeenCalled();
+  });
+
+  it("waits for a save still running, so the two never upload at once", async () => {
+    let release!: () => void;
+    put.mockImplementationOnce(async (_, path) => {
+      await new Promise<void>((r) => (release = r));
+      return { asset_id: "put", path };
+    });
+    const { storage } = setup({ now });
+    const saving = storage.save(file, "cam.slp", ref("sub-01/cam.slp"));
+    const packaging = storage.saveTrainingPackage(file, ref("sub-01/cam.slp"));
+    await vi.waitFor(() => expect(put).toHaveBeenCalledTimes(1));
+    await Promise.resolve();
+    expect(put).toHaveBeenCalledTimes(1);
+    release();
+    await Promise.all([saving, packaging]);
+    expect(put.mock.calls.map((c) => c[1])).toContain(
+      "derivatives/sleap/sub-01/beh/sub-01_desc-trainingsetCam20261122153000_pose.pkg.slp",
+    );
   });
 });
 
@@ -428,7 +616,10 @@ describe("resolveVideo", () => {
       fileType: "avi",
       name: "session1.avi",
     });
-    expect(await assetBehind(storage, "https://s3.test/near?sig=1")).toEqual(["000398", "near"]);
+    expect(storage.describe("https://s3.test/near?sig=1")).toMatchObject({
+      assetId: "near",
+      path: "sub-01/beh/session1.avi",
+    });
   });
 
   it("resolves a saved project's video by the source tree its labels file mirrors", async () => {
@@ -462,6 +653,7 @@ describe("refreshUrl", () => {
     // A caller that still holds the first link, such as a second save that read it before the renewal.
     expect((await storage.refreshUrl(request)).url).toBe("https://s3.test/a1?sig=3");
     expect((await storage.refreshUrl(fresh)).url).toBe("https://s3.test/a1?sig=4");
-    expect(resolveUrl).toHaveBeenLastCalledWith(cfgFor("000123"), "a1", options.fetch);
+    expect(storage.describe(fresh.url)).toEqual(storage.describe(opened.url));
+    expect(storage.describe(fresh.url)?.path).toBe("sub-01/x.slp");
   });
 });

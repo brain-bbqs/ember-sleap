@@ -18,13 +18,19 @@ import {
   renderAuthState,
   renderVersion,
 } from "@brain-bbqs/ui";
+import { COMPUTE_PROXY_URL, createProxyComputeClient, type ComputeClient } from "./lib/computeClient";
+import { createStubCompute } from "./lib/computeStub";
 import { fetchDandiset, listOwnDandisets, listProjects, listVideos, type ProjectAsset } from "./lib/emberAssets";
-import { createEmberStorage, type ProjectStorage, type SavedFile } from "./lib/emberStorage";
+import { createEmberStorage, type PathOpener, type ProjectStorage, type SavedFile } from "./lib/emberStorage";
 import type { SaveStage } from "./lib/emberUpload";
 import { createHashPool } from "./lib/etagPool";
 import { createSleapHost } from "./lib/host";
 import { fromHostRef, type EmberLocation } from "./lib/hostRef";
 import { createMemoryStorage } from "./lib/memoryStorage";
+import type { ModelSource } from "./lib/modelCatalogue";
+import { createEmberModelSource } from "./lib/modelEmber";
+import { createHuggingFaceSource } from "./lib/modelHuggingFace";
+import { createIndexSource, MODEL_INDEX_URL } from "./lib/modelIndex";
 import { createOAuth } from "./lib/oauth";
 import { settingsStore, STORAGE_KEY } from "./lib/settings";
 import {
@@ -34,17 +40,21 @@ import {
   type OpenRequest,
   type ProjectIntent,
   type SleapAppHandle,
+  type TrackJobSpec,
 } from "./lib/sleapContract";
 import {
+  mockModelSource,
   mockNewProjectRequest,
   mockProjectRequest,
   MOCK_DANDISET_ID,
+  MOCK_MODELS,
   MOCK_PROJECT_PATH,
   readTestInjection,
 } from "./lib/testInjection";
 import { getElements, getShell } from "./ui/elements";
 import { createEntitiesPrompt } from "./ui/entitiesDialog";
 import { createOverwritePrompt } from "./ui/overwriteDialog";
+import { createPredictionsList } from "./ui/predictionsList";
 import { renderProjects } from "./ui/projectList";
 import { loadSleapComponent, sleapAppBaseUrl } from "./ui/sleapComponent";
 
@@ -61,7 +71,7 @@ renderVersion(shell.versionIndicator, __APP_VERSION__);
 
 // ---------------------------------------------------------------------------------------------
 // The app: EMBER sign-in and the project picker around the embedded SLEAP app, and the host
-// callbacks (EMBER storage and the picker) the app is mounted with.
+// callbacks (storage, models, compute) the app is mounted with.
 // ---------------------------------------------------------------------------------------------
 
 const MESSAGES: FriendlyMessages = {
@@ -75,7 +85,7 @@ const FLAG_UNREAD =
 
 const account = shell.account;
 const injection = readTestInjection(window.location.search);
-// Either mock state runs offline, with in-memory saves.
+// Either mock state runs offline: in-memory saves, fixed models and the compute stub.
 const mocked = !!(injection?.mockProject || injection?.mockNewProject);
 const oauth = createOAuth();
 let tokens: OAuthTokenSet | null = null;
@@ -87,7 +97,7 @@ let refreshing: { from: OAuthTokenSet; done: Promise<void> } | null = null;
 let storedRefreshToken: string | undefined;
 // Bumped whenever the signed-in account may have changed, so a lookup started before then is dropped.
 let authEpoch = 0;
-// The dandiset whose projects are listed, and so the one the human-subjects notice is for.
+// The dandiset whose projects are listed, and so the one EMBER model folders are read from.
 let listedDandisetId = "";
 // The latest listing and the latest open each win: an earlier one that resolves late is dropped.
 let listingSeq = 0;
@@ -204,22 +214,24 @@ const ember = createEmberStorage({
   },
 });
 
-function pageStorage(): ProjectStorage {
+function pageStorage(): ProjectStorage & PathOpener {
   if (!mocked) return ember;
-  const memory = createMemoryStorage();
+  const memory = createMemoryStorage({ unwritten: injection.mockPredictionsMissing });
+  const shown = (saved: SavedFile) => {
+    say(els.hostStatus, `Saved in memory (test injection): ${fromHostRef(saved.ref)?.path}`, "ok");
+    return saved;
+  };
   return {
     ...memory,
-    save: (file, name, ref) =>
-      memory.save(file, name, ref).then((saved) => {
-        say(els.hostStatus, `Saved in memory (test injection): ${fromHostRef(saved.ref)?.path}`, "ok");
-        return saved;
-      }),
+    save: (file, name, ref) => memory.save(file, name, ref).then(shown),
+    saveTrainingPackage: (file, ref) => memory.saveTrainingPackage(file, ref).then(shown),
   };
 }
 
 /**
- * Archive failures in words a person can act on, and a line saying where a save landed. Saves are
- * reported one at a time, so one save's warnings never end up on another's line.
+ * Archive failures in words a person can act on, and a line saying where a save, or the labels a
+ * training job was sent, landed. Saves are reported one at a time, so one save's warnings never end
+ * up on another's line.
  */
 function withSaveReporting(storage: ProjectStorage): ProjectStorage {
   if (mocked) return storage;
@@ -249,11 +261,49 @@ function withSaveReporting(storage: ProjectStorage): ProjectStorage {
   return {
     ...storage,
     save: (file, name, ref) => inTurn(() => report("Saved", ref, () => storage.save(file, name, ref))),
+    saveTrainingPackage: (file, ref) =>
+      inTurn(() => report("Saved the training labels", ref, () => storage.saveTrainingPackage(file, ref))),
   };
 }
 
+/** Where jobs run, and, while that is the stub, the models it trained, listed as EMBER would list them. */
+function pageCompute(): { client: ComputeClient; trained: ModelSource[] } {
+  if (COMPUTE_PROXY_URL && !mocked) {
+    const client = createProxyComputeClient({
+      baseUrl: COMPUTE_PROXY_URL,
+      getToken: async () => (await configFor("")).accessToken || null,
+    });
+    return { client, trained: [] };
+  }
+  const stub = createStubCompute(mocked ? { tickMs: 150 } : {});
+  return { client: stub, trained: [stub.models] };
+}
+
+function modelSources(trained: ModelSource[]): ModelSource[] {
+  if (mocked) return [mockModelSource, ...trained];
+  const sources: ModelSource[] = [];
+  if (MODEL_INDEX_URL) sources.push(createIndexSource({ url: MODEL_INDEX_URL }));
+  sources.push(
+    createHuggingFaceSource({}),
+    // Resolved per listing, so the models are read with the token saves use, and with none once signed
+    // out. With nothing listed yet the config names no dandiset, which the source reads as nothing open.
+    createEmberModelSource({ getConfig: () => configFor(listedDandisetId) }),
+    ...trained,
+  );
+  return sources;
+}
+
+const storage = pageStorage();
+const compute = pageCompute();
+// Per page session: closing the project empties it, and nothing about it is stored.
+const predictions = createPredictionsList(els.predictions, (file) => void openPredictions(file));
 const host = createSleapHost({
-  storage: withSaveReporting(pageStorage()),
+  storage: withSaveReporting(storage),
+  modelSources: modelSources(compute.trained),
+  compute: compute.client,
+  onModelWarning: (source, e) => console.warn(`Could not list models from ${source}:`, e),
+  // Closing the project forgets its jobs (see the close handler), so every report is the open app's.
+  onPredictions: (_jobId, files) => predictions.add(files),
   chooseProject: (intent) => showPicker(intent),
 });
 
@@ -297,13 +347,15 @@ function showInBar(title: string, location: string): void {
 async function openProject(request: OpenRequest, location: string, isCurrent = () => true): Promise<void> {
   const handle = await ensureApp();
   if (!isCurrent()) return;
+  host.remember(request);
   showInBar(request.name, location);
   closePicker();
   await handle.open(request);
 }
 
-/** Hands the app a new project, which it saves through the host's EMBER storage. */
+/** Hands the app a new project as the page's own: the host follows its saves and jobs. */
 function createProject(handle: SleapAppHandle, request: NewProjectRequest, location: string): Promise<void> {
+  host.rememberNew(request);
   showInBar(request.name, location);
   closePicker();
   return handle.create(request);
@@ -361,6 +413,31 @@ async function startProject(dandisetId: string, videos: ProjectAsset[], note = "
     );
   } catch (e) {
     if (isCurrent()) say(els.openStatus, friendlyError(e, MESSAGES), "err");
+  }
+}
+
+const DISCARD_FOR_PREDICTIONS = "The open project has unsaved changes. Open the predictions without saving them?";
+
+/**
+ * Opens predictions a job wrote in place of the project open now, as the picker opens a project:
+ * the latest click wins, and edits not yet saved are only dropped once the person says so.
+ */
+async function openPredictions(file: EmberLocation): Promise<void> {
+  // Bumped before asking, so a "no" also stops an earlier open, which would drop the same edits.
+  const seq = ++openSeq;
+  const isCurrent = () => seq === openSeq;
+  const askedFirst = hasEdits();
+  if (askedFirst && !window.confirm(DISCARD_FOR_PREDICTIONS)) return predictions.done();
+  predictions.opening(file);
+  try {
+    const request = await storage.openPath(file.dandisetId, file.path);
+    if (!isCurrent()) return;
+    // Edits made while it loaded are the person's too.
+    if (!askedFirst && !confirmDiscard(DISCARD_FOR_PREDICTIONS)) return predictions.done();
+    await openProject(request, locationLine(file), isCurrent);
+    if (isCurrent()) predictions.done();
+  } catch (e) {
+    if (isCurrent()) predictions.failed(file, friendlyError(e, MESSAGES));
   }
 }
 
@@ -545,8 +622,11 @@ els.openDialog.dialog.addEventListener("cancel", () => {
 
 els.closeProjectBtn.addEventListener("click", () => {
   if (!confirmDiscard("Close the project without saving your changes?")) return;
-  // A project still opening would otherwise bring itself back once it arrives.
+  // Predictions still opening would otherwise bring the project back once they arrive, and a job of
+  // this project's would list its predictions under the next one.
   openSeq++;
+  host.forgetJobs();
+  predictions.clear();
   app?.unmount();
   app = null;
   mounting = null;
@@ -567,7 +647,16 @@ const params = new URLSearchParams(window.location.search);
 els.dandisetInput.value = extractDandisetId(params.get("dandiset") ?? "") || (stored?.dandisetId ?? "");
 
 if (injection?.mockProject) {
-  void openProject(mockProjectRequest(), locationLine({ dandisetId: MOCK_DANDISET_ID, path: MOCK_PROJECT_PATH }));
+  const mock = mockProjectRequest();
+  const opening = openProject(mock, locationLine({ dandisetId: MOCK_DANDISET_ID, path: MOCK_PROJECT_PATH }));
+  // Inference on the mock project, submitted and followed through the host as the app does it, so
+  // its predictions reach the list through the same checks a finished job's do.
+  if (injection.mockPredictions) {
+    const spec: TrackJobSpec = { type: "track", data_path: mock.url, model_paths: [MOCK_MODELS[0].id] };
+    void opening
+      .then(() => host.submitJob(spec, mock.ref))
+      .then(({ jobId }) => host.subscribeJob(jobId, () => undefined));
+  }
 } else if (injection?.mockNewProject) {
   const mock = mockNewProjectRequest();
   void ensureApp().then((handle) =>

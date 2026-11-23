@@ -11,6 +11,7 @@ const API = "https://api-dandi.emberarchive.org/api";
 const PRESIGNED = "https://ember-embargo.s3.example/blobs/abc?X-Amz-Signature=sig";
 const HDF5 = new Uint8Array([0x89, 0x48, 0x44, 0x46, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0]);
 const TOKENS = { accessToken: "tok", refreshToken: "ref", expiresAt: Date.now() + 3_600_000 };
+const MODELS = encodeURIComponent("derivatives/sleap/models/");
 
 let fetchMock: FetchRouter;
 
@@ -34,6 +35,16 @@ beforeAll(async () => {
       }),
     },
     {
+      match: (url) => url.startsWith(`${API}/dandisets/000123/versions/draft/assets/?path=${MODELS}`),
+      respond: jsonResponse({
+        results: [
+          { asset_id: "c1", path: "derivatives/sleap/models/mouse/training_config.yaml" },
+          { asset_id: "k1", path: "derivatives/sleap/models/mouse/best.ckpt" },
+          { asset_id: "m1", path: "derivatives/sleap/models/mouse/model_card.json" },
+        ],
+      }),
+    },
+    {
       match: `${API}/dandisets/000123/versions/draft/`,
       respond: jsonResponse({ description: "Pilot. CONTAINS HUMAN SUBJECTS." }),
     },
@@ -45,6 +56,7 @@ beforeAll(async () => {
         draft_version: { name: "Incoming: Lab" },
       }),
     },
+    { match: `${API}/assets/m1/download/`, respond: () => new Response(JSON.stringify({ name: "Mouse" })) },
     { match: `${API}/assets/a1/download/`, respond: () => redirectedResponse(PRESIGNED) },
     { match: PRESIGNED, respond: () => new Response(HDF5, { status: 206 }) },
   ]);
@@ -59,6 +71,18 @@ beforeAll(async () => {
 afterEach(() => vi.restoreAllMocks());
 
 const bearer = (url: string) => new Headers(fetchMock.callsTo(url)[0]?.init?.headers).get("Authorization");
+
+/** Clicks "Find models" and returns the Authorization header of each EMBER call it made. */
+async function findModels(): Promise<(string | null)[]> {
+  vi.spyOn(console, "warn").mockImplementation(() => {});
+  const before = fetchMock.calls.length;
+  role("list-models").click();
+  await vi.waitFor(() => expect(role("models").textContent).toContain("Mouse"));
+  return fetchMock.calls
+    .slice(before)
+    .filter((c) => c.url.startsWith(API))
+    .map((c) => new Headers(c.init?.headers).get("Authorization"));
+}
 
 describe("a signed-in visitor on an embargoed, human-subjects dandiset", () => {
   it("shows the account and suggests the dandisets it owns", async () => {
@@ -96,12 +120,25 @@ describe("a signed-in visitor on an embargoed, human-subjects dandiset", () => {
     expect(bearer(PRESIGNED)).toBeNull();
   });
 
+  it("finds the dandiset's own models with the account's token", async () => {
+    expect(await findModels()).toEqual(["Bearer tok", "Bearer tok"]);
+  });
+
   it("refuses to save until the human-subjects notice is confirmed", async () => {
     role("edit").click();
     role("save").click();
     const refusal = "Confirm the human-subjects notice above before saving to this dandiset.";
     await vi.waitFor(() => expect(el("host-status").textContent).toBe(refusal));
     expect(role("save-status").textContent).toBe(`Save failed: ${refusal}`);
+    expect(fetchMock.callsTo("/uploads/initialize/").length).toBe(0);
+  });
+
+  it("keeps the edits a training job is sent to the same rule, and submits nothing", async () => {
+    role("train").click();
+    const refusal = "Confirm the human-subjects notice above before saving to this dandiset.";
+    await vi.waitFor(() => expect(role("compute-status").textContent).toBe(`Could not submit: ${refusal}`));
+    expect(el("host-status").textContent).toBe(refusal);
+    expect(role("job").hidden).toBe(true);
     expect(fetchMock.callsTo("/uploads/initialize/").length).toBe(0);
   });
 
@@ -122,6 +159,10 @@ describe("a signed-in visitor on an embargoed, human-subjects dandiset", () => {
     expect(el("oauthSigninBtn").hidden).toBe(false);
     expect(JSON.parse(localStorage.getItem(STORAGE_KEY)!)).toEqual({ dandisetId: "000123" });
     expect(el("dandiset-options").children.length).toBe(0);
+  });
+
+  it("finds models anonymously once signed out", async () => {
+    expect(await findModels()).toEqual([null, null]);
   });
 
   it("says a save needs sign-in once signed out", async () => {

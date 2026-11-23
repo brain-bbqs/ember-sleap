@@ -1,6 +1,7 @@
 // The embed's isolation and host-callback checks from docs/DEVELOPMENT_PLAN.md ("Validation"),
-// reached through `?test&mock_project` (the SLEAP stand-in, on a mock project) so no archive or
-// sign-in is involved. sleap-app.spec.ts runs the real app's own checks.
+// reached through `?test&mock_project` (the SLEAP stand-in, on a mock project) so no archive,
+// sign-in or compute is involved. They run
+// against the stand-in today and are meant to keep passing once the real component mounts.
 import { test, expect, type Page } from "@playwright/test";
 import { STORAGE_KEY } from "../../src/lib/settings";
 
@@ -43,6 +44,117 @@ test.describe("the embedded SLEAP app", () => {
     await expect(role(page, "dirty")).toBeHidden();
   });
 
+  test("offers only the page's compute: no Local, no SLEAP Connect", async ({ page }) => {
+    await openMockProject(page);
+    await expect(role(page, "backend").locator("option")).toHaveText(["EMBER compute (host)"]);
+  });
+
+  test("submits training and inference through the host and shows their events", async ({ page }) => {
+    await openMockProject(page);
+    await role(page, "train").click();
+    await expect(role(page, "job-state")).toHaveText("completed");
+    await expect(role(page, "job-log")).toContainText("epoch 2: train loss 0.3333, val loss 0.4");
+    // model_dir is a model card id a later track job can name; the folder is model_path.
+    await expect(role(page, "job-log")).toContainText('"model_dir":"ember:mock/stub-model-1"');
+    await expect(role(page, "job-log")).toContainText('"model_path":"derivatives/sleap/models/stub-model-1/"');
+
+    await role(page, "list-models").click();
+    await role(page, "predict").first().click();
+    await expect(role(page, "job-id")).toHaveText("Job stub-2");
+    await expect(role(page, "job-state")).toHaveText("completed");
+    await expect(role(page, "job-log")).toContainText("Model: mock:single-instance");
+
+    // The model just trained is listed as EMBER would list its folder, so it can predict too.
+    await expect(role(page, "models")).toContainText("stub-model-1 (trained here on the stub)");
+    await role(page, "predict").last().click();
+    await expect(role(page, "job-id")).toHaveText("Job stub-3");
+    await expect(role(page, "job-state")).toHaveText("completed");
+    await expect(role(page, "job-log")).toContainText("Model: ember:mock/stub-model-1");
+  });
+
+  test("predicts with a top-down model, sending both of its model folders", async ({ page }) => {
+    await openMockProject(page);
+    await role(page, "list-models").click();
+    const topDown = role(page, "models").locator("li", { hasText: "Test injection model (top-down)" });
+    await expect(topDown).toContainText("centroid, centered_instance");
+    await topDown.locator('[data-role="predict"]').click();
+    await expect(role(page, "job-state")).toHaveText("completed");
+    const log = role(page, "job-log");
+    await expect(log).toContainText("Model: mock:top-down");
+    await expect(log).toContainText(
+      "model folder centroid: config data:,mock-centroid-config; checkpoint data:,mock-centroid-checkpoint",
+    );
+    await expect(log).toContainText(
+      "model folder centered_instance: config data:,mock-centered-instance-config; checkpoint data:,mock-centered-instance-checkpoint",
+    );
+
+    // A model trained here says it is kept on EMBER, as the EMBER source lists its folder.
+    await role(page, "train").click();
+    await expect(role(page, "job-state")).toHaveText("completed");
+    await role(page, "list-models").click();
+    await expect(role(page, "models").locator("li").last()).toContainText(
+      "stub-model-2 (trained here on the stub) single_instance · from EMBER dandiset mock",
+    );
+  });
+
+  test("opens the predictions an inference job wrote, and saves them proofread as labels beside them", async ({
+    page,
+  }) => {
+    const folder = "derivatives/sleap/sub-mock/beh";
+    const predictions = `${folder}/sub-mock_desc-predictionsTestInjectionMockProject_pose.slp`;
+    await openMockProject(page);
+    await expect(page.locator("#predictions")).toBeHidden();
+    await role(page, "list-models").click();
+    await role(page, "predict").first().click();
+    await expect(role(page, "job-state")).toHaveText("completed");
+    await expect(page.locator("#predictions-list button")).toHaveText([predictions]);
+
+    await page.locator(`.predictions-open[data-path="${predictions}"]`).click();
+    await expect(role(page, "file-name")).toHaveText("sub-mock_desc-predictionsTestInjectionMockProject_pose.slp");
+    await expect(page.locator("#project-location")).toHaveText(`Test injection · ${predictions}`);
+    await expect(role(page, "file-probe")).toContainText("HDF5 signature");
+
+    await role(page, "edit").click();
+    await page.keyboard.press("Control+s");
+    await expect(page.locator("#host-status")).toHaveText(
+      `Saved in memory (test injection): ${folder}/sub-mock_desc-labelsTestInjectionMockProject_pose.slp`,
+    );
+    await expect(role(page, "dirty")).toBeHidden();
+    // The predictions stay listed, to open again.
+    await expect(page.locator("#predictions-list button")).toHaveText([predictions]);
+  });
+
+  test("trains on unsaved edits offline, keeping them in memory as a training package first", async ({ page }) => {
+    const hosts = new Set<string>();
+    page.on("request", (request) => {
+      const url = new URL(request.url());
+      if (url.protocol.startsWith("http")) hosts.add(url.host);
+    });
+    const now = new Date("2026-11-22T15:30:00Z");
+    await page.clock.setFixedTime(now);
+    await openMockProject(page);
+    await role(page, "edit").click();
+    await role(page, "train").click();
+
+    const name = "sub-mock_desc-trainingsetTestInjectionMockProject20261122153000_pose.pkg.slp";
+    await expect(page.locator("#host-status")).toHaveText(
+      `Saved in memory (test injection): derivatives/sleap/sub-mock/beh/${name}`,
+    );
+    await expect(role(page, "job-state")).toHaveText("completed");
+    await expect(role(page, "job-log")).toContainText(`Input: ${name} (pkg.slp)`);
+    await expect(role(page, "dirty")).toBeVisible();
+    expect([...hosts]).toEqual([new URL(page.url()).host]);
+  });
+
+  test("cancels a running job", async ({ page }) => {
+    await openMockProject(page);
+    await role(page, "train").click();
+    await expect(role(page, "job-state")).toHaveText("running");
+    await role(page, "job-cancel").click();
+    await expect(role(page, "job-state")).toHaveText("canceled");
+    await expect(role(page, "job-cancel")).toBeHidden();
+  });
+
   test("asks before signing out with unsaved edits", async ({ page }) => {
     // Signed in from storage; the archive is unreachable, so only the header's state matters.
     await page.route("https://api-dandi.emberarchive.org/**", (route) => route.abort());
@@ -72,9 +184,8 @@ test.describe("the embedded SLEAP app", () => {
       if (url.protocol.startsWith("http")) hosts.add(url.host);
     });
     await openMockProject(page);
-    await role(page, "edit").click();
-    await role(page, "save").click();
-    await expect(role(page, "dirty")).toBeHidden();
+    await role(page, "train").click();
+    await expect(role(page, "job-state")).toHaveText("completed");
     expect([...hosts]).toEqual([new URL(page.url()).host]);
   });
 

@@ -22,16 +22,18 @@ This is the ember-sleap side of [the development plan](docs/DEVELOPMENT_PLAN.md)
 The page mounts the real SLEAP web app, built as a component on our fork, [brain-bbqs/sleap-app](https://github.com/brain-bbqs/sleap-app) (`embed/integration`), through the contract proposed upstream (`src/lib/sleapContract.ts`, [docs/UPSTREAM_PROPOSAL.md](docs/UPSTREAM_PROPOSAL.md)).
 It is installed from the fork's `embed/package` branch as `@talmolab/sleap-app`, pinned to a commit in `package.json`, and served beside the page at `sleap-app/` (`configs/sleapAppPackage.ts`).
 Nothing has been sent upstream: this is a test run of that path.
-A **stand-in** (`src/ui/sleapStandIn.ts`) drives the host's callbacks for the `?test` mocks and the unit tests.
+A **stand-in** (`src/ui/sleapStandIn.ts`) still drives the host's callbacks for the `?test` mocks and the unit tests, and for what the real app does not reach through the host yet (model catalogue, compute, predictions).
 
-| Piece                                                  | State                                                                                                                    |
-| ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------ |
-| The page                                               | The real SLEAP app (labeling included) between a BBQS header and footer, dark only                                       |
-| Open a `.slp` or `.pkg.slp` from any readable dandiset | Works against the live archive                                                                                           |
-| Start a new project on a dandiset's videos             | Picking a dandiset with no SLEAP project, or New Project, starts one in the SLEAP app, which reads the videos from EMBER |
-| Save to `derivatives/sleap/` as a BIDS derivative      | Works end to end against a mocked archive; needs sign-in                                                                 |
-| EMBER sign-in                                          | On, with ember-sleap's own OAuth app on EMBER; redirect URIs still to confirm                                            |
-| Models, training and inference through EMBER           | Held for a follow-up PR until the fork's plan PRs 7b and 7c and the compute proxy exist; the real app offers its own     |
+| Piece                                                  | State                                                                                                                     |
+| ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------- |
+| The page                                               | The real SLEAP app (labeling included) between a BBQS header and footer, dark only                                        |
+| Open a `.slp` or `.pkg.slp` from any readable dandiset | Works against the live archive                                                                                            |
+| Start a new project on a dandiset's videos             | Picking a dandiset with no SLEAP project, or New Project, starts one in the SLEAP app, which reads the videos from EMBER  |
+| Save to `derivatives/sleap/` as a BIDS derivative      | Works end to end against a mocked archive; needs sign-in                                                                  |
+| EMBER sign-in                                          | On, with ember-sleap's own OAuth app on EMBER; redirect URIs still to confirm                                             |
+| Model catalogue (Hugging Face, EMBER, central index)   | Sources written and unit-tested, top-down models included; the index dandiset does not exist yet                          |
+| Training and inference                                 | Run on an in-browser stub until the central Pennsieve proxy's job API exists ([docs/COMPUTE_API.md](docs/COMPUTE_API.md)) |
+| Models and compute in the real app                     | Not wired through the host yet (plan PRs 7b and 7c): the real app offers its own, the stand-in the host's                 |
 
 Try it with [`?dandiset=000398`](https://brain-bbqs.github.io/ember-sleap/?dandiset=000398) (a public SLEAP example) or offline with [`?test&mock_project`](https://brain-bbqs.github.io/ember-sleap/?test&mock_project) and [`?test&mock_new_project`](https://brain-bbqs.github.io/ember-sleap/?test&mock_new_project).
 
@@ -43,6 +45,7 @@ npm run dev              # the app, with hot reload
 npm test                 # unit tests (add `:coverage`, or `:watch`)
 npm run test:integration # Playwright, against a fresh build
 npm run lint && npm run typecheck
+npm run check-model-index -- docs/examples/models.json
 ```
 
 Set `PLAYWRIGHT_CHROMIUM_PATH` to reuse a browser already on the machine instead of `npx playwright install`.

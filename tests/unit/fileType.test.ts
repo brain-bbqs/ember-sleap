@@ -1,6 +1,36 @@
 import { describe, expect, it } from "vitest";
-import { baseName, fileTypeOfPath, isProjectType } from "../../src/lib/fileType";
+import { baseName, fileTypeOfPath, isProjectType, isSafeRelativePath, projectTypeOf } from "../../src/lib/fileType";
 import type { FileType } from "../../src/lib/sleapContract";
+
+describe("projectTypeOf", () => {
+  it.each<[string, FileType]>([
+    ["sub-01/labels.slp", "slp"],
+    ["sub-01/train.PKG.SLP", "pkg.slp"],
+  ])("%s is a %s project", (path, expected) => {
+    expect(projectTypeOf(path)).toBe(expected);
+  });
+
+  it.each(["videos/session1.mp4", "dataset_description.json"])("refuses %s, naming it", (path) => {
+    expect(() => projectTypeOf(path)).toThrow(new Error(`${path} is not a SLEAP project (.slp or .pkg.slp).`));
+  });
+});
+
+describe("isSafeRelativePath", () => {
+  it.each<[string, boolean]>([
+    ["derivatives/sleap/sub-01/beh/x.slp", true],
+    ["x.slp", true],
+    ["..x/y..", true],
+    ["", false],
+    ["/abs/x.slp", false],
+    ["a//b", false],
+    ["a/b/", false],
+    ["./a", false],
+    ["a/../b", false],
+    ["..", false],
+  ])("%j is safe: %s", (path, expected) => {
+    expect(isSafeRelativePath(path)).toBe(expected);
+  });
+});
 
 describe("fileTypeOfPath", () => {
   it.each<[string, FileType | null]>([
