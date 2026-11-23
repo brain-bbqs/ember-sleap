@@ -1,0 +1,10 @@
+{
+  "name": "ember-sleap",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Placeholder until the app lands: holds only the Chromatic CLI that .github/workflows/chromatic-publish.yml installs from the default branch.",
+  "license": "MIT",
+  "devDependencies": {
+    "chromatic": "18.9.4"
+  }
+}
