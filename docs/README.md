@@ -1,4 +1,18 @@
-# Live Testing
+# Development
+
+## Local development
+
+```bash
+npm ci
+apm install --frozen     # the agent skills, into .claude/skills/ and .agents/skills/ (`pipx install apm-cli`)
+npm run dev              # the app, with hot reload
+npm test                 # unit tests (add `:coverage`, or `:watch`)
+npm run test:integration # Playwright, against a fresh build
+npm run lint && npm run typecheck
+npm run check-model-index -- docs/examples/models.json
+```
+
+Set `PLAYWRIGHT_CHROMIUM_PATH` to reuse a browser already on the machine instead of `npx playwright install`.
 
 ## Live test injections
 

@@ -39,17 +39,4 @@ A **stand-in** (`src/ui/sleapStandIn.ts`) still drives the host's callbacks for 
 
 Try it with [`?dandiset=000398`](https://brain-bbqs.github.io/ember-sleap/?dandiset=000398) (a public SLEAP example) or offline with [`?test&mock_project`](https://brain-bbqs.github.io/ember-sleap/?test&mock_project) and [`?test&mock_new_project`](https://brain-bbqs.github.io/ember-sleap/?test&mock_new_project).
 
-## Local development
-
-```bash
-npm ci
-apm install --frozen     # the agent skills, into .claude/skills/ and .agents/skills/ (`pipx install apm-cli`)
-npm run dev              # the app, with hot reload
-npm test                 # unit tests (add `:coverage`, or `:watch`)
-npm run test:integration # Playwright, against a fresh build
-npm run lint && npm run typecheck
-npm run check-model-index -- docs/examples/models.json
-```
-
-Set `PLAYWRIGHT_CHROMIUM_PATH` to reuse a browser already on the machine instead of `npx playwright install`.
-Live test injections are listed in [docs/README.md](docs/README.md).
+Local development and the live test injections are in [docs/README.md](docs/README.md).
