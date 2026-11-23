@@ -4,8 +4,8 @@ dependencies:
 - repo_url: brain-bbqs/bbqs-web-components
   name: frontend-security
   host: github.com
-  resolved_commit: 66c335e3612f4fa977a85a92210f23158a12608d
-  resolved_ref: 66c335e3612f4fa977a85a92210f23158a12608d
+  resolved_commit: 868bf066833100cc21654e117f3a56079a3bbc11
+  resolved_ref: 868bf066833100cc21654e117f3a56079a3bbc11
   version: 0.1.0
   virtual_path: skills/frontend-security
   is_virtual: true
@@ -26,8 +26,8 @@ dependencies:
 - repo_url: brain-bbqs/bbqs-web-components
   name: reuse-license-setup
   host: github.com
-  resolved_commit: 66c335e3612f4fa977a85a92210f23158a12608d
-  resolved_ref: 66c335e3612f4fa977a85a92210f23158a12608d
+  resolved_commit: 868bf066833100cc21654e117f3a56079a3bbc11
+  resolved_ref: 868bf066833100cc21654e117f3a56079a3bbc11
   version: 0.1.0
   virtual_path: skills/reuse-license-setup
   is_virtual: true
@@ -48,8 +48,8 @@ dependencies:
 - repo_url: brain-bbqs/bbqs-web-components
   name: visual-snapshots
   host: github.com
-  resolved_commit: 66c335e3612f4fa977a85a92210f23158a12608d
-  resolved_ref: 66c335e3612f4fa977a85a92210f23158a12608d
+  resolved_commit: 868bf066833100cc21654e117f3a56079a3bbc11
+  resolved_ref: 868bf066833100cc21654e117f3a56079a3bbc11
   version: 0.1.0
   virtual_path: skills/visual-snapshots
   is_virtual: true
