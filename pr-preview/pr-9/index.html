@@ -1,11 +1,7 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="dark">
   <head>
     <script>try {
-  var storedTheme = localStorage.getItem("ember-sleap.theme");
-  if (storedTheme === "light" || storedTheme === "dark") document.documentElement.dataset.theme = storedTheme;
-} catch (e) {}
-try {
   var storedSettings = JSON.parse(localStorage.getItem("ember-sleap.settings.v1"));
   if (storedSettings && storedSettings.oauth && storedSettings.oauth.accessToken) {
     document.documentElement.dataset.signedIn = "1";
@@ -16,11 +12,11 @@ try {
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>EMBER SLEAP</title>
     <link rel="icon" type="image/png" href="./assets/sleap-logo-QmtXJJ2h.png" />
-    <script type="module" crossorigin src="./assets/index-BHIOkLXk.js"></script>
+    <script type="module" crossorigin src="./assets/index-CeqMZtji.js"></script>
     <link rel="modulepreload" crossorigin href="./assets/rolldown-runtime-WkwZ5CU-.js">
     <link rel="modulepreload" crossorigin href="./assets/base64-DIcECXKk.js">
     <link rel="modulepreload" crossorigin href="./assets/preload-helper-CRzLMJPS.js">
-    <link rel="stylesheet" crossorigin href="./assets/index-7QP9dL4k.css">
+    <link rel="stylesheet" crossorigin href="./assets/index-DlDiN7rz.css">
   </head>
   <body>
     <a
@@ -48,65 +44,6 @@ try {
         </a>
         <h1>EMBER SLEAP</h1>
         <div class="header-actions">
-          <!-- The Talmo Lab mark is a wordless flask, so its name is spelled out beneath it, as clip-extractor
-               and encoding-helper show it. Two logo files rather than one, because the lab's flask is
-               dark-stroked and disappears against the dark theme; CSS shows whichever matches the theme. -->
-          <a
-            class="talmo-brand"
-            href="https://talmolab.org/"
-            target="_blank"
-            rel="noopener"
-            aria-label="Talmo Lab"
-            title="Talmo Lab"
-          >
-            <img class="talmo-logo on-light" src="data:image/svg+xml,%3c!--%20Talmo%20Lab%20logo:%20talmolab/lab-website%20images/logo_static.svg,%20minus%20its%20animation%20styles.%20--%3e%3csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='-60%20-65%20120%20120'%3e%3ccircle%20fill='%23b3e5fc'%20cx='-3'%20cy='-50'%20r='3'%20opacity='0.3'%20/%3e%3ccircle%20fill='%23b3e5fc'%20cx='2'%20cy='-40'%20r='3'%20opacity='0.5'%20/%3e%3ccircle%20fill='%23b3e5fc'%20cx='-1'%20cy='-30'%20r='3'%20opacity='0.7'%20/%3e%3ccircle%20fill='%23b3e5fc'%20cx='3'%20cy='-20'%20r='3'%20opacity='0.9'%20/%3e%3cpath%20fill='%2381d4fa'%20d='%20M%200.0%20-15.0%20L%20-21.7%20-2.5%20L%20-21.7%2022.5%20L%20-0.0%2035.0%20L%2021.7%2022.5%20L%2021.7%20-2.5%20z%20'%20/%3e%3cpath%20fill='%23b3e5fc'%20d='%20M%200.0%20-15.0%20L%20-21.7%20-2.5%20L%200%2010%20L%2021.7%20-2.5%20z%20'%20/%3e%3cpath%20fill='none'%20stroke='%23000'%20stroke-width='8'%20stroke-linecap='round'%20stroke-linejoin='round'%20d='%20M%20-45%20-53%20L%20-15%20-53%20L%20-15%20-19.2%20L%20-30.3%20-7.5%20L%20-30.3%2027.5%20L%20-0%2045%20L%2030.3%2027.5%20L%2030.3%20-7.5%20L%2015%20-19.2%20L%2015%20-53%20L%2045%20-53%20'%20/%3e%3c/svg%3e" alt="" />
-            <img class="talmo-logo on-dark" src="data:image/svg+xml,%3c!--%20Talmo%20Lab%20logo,%20white-stroke%20variant%20for%20dark%20backgrounds;%20see%20talmolab-logo.svg.%20--%3e%3csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='-60%20-65%20120%20120'%3e%3ccircle%20fill='%23b3e5fc'%20cx='-3'%20cy='-50'%20r='3'%20opacity='0.3'%20/%3e%3ccircle%20fill='%23b3e5fc'%20cx='2'%20cy='-40'%20r='3'%20opacity='0.5'%20/%3e%3ccircle%20fill='%23b3e5fc'%20cx='-1'%20cy='-30'%20r='3'%20opacity='0.7'%20/%3e%3ccircle%20fill='%23b3e5fc'%20cx='3'%20cy='-20'%20r='3'%20opacity='0.9'%20/%3e%3cpath%20fill='%2381d4fa'%20d='%20M%200.0%20-15.0%20L%20-21.7%20-2.5%20L%20-21.7%2022.5%20L%20-0.0%2035.0%20L%2021.7%2022.5%20L%2021.7%20-2.5%20z%20'%20/%3e%3cpath%20fill='%23b3e5fc'%20d='%20M%200.0%20-15.0%20L%20-21.7%20-2.5%20L%200%2010%20L%2021.7%20-2.5%20z%20'%20/%3e%3cpath%20fill='none'%20stroke='%23ffffff'%20stroke-width='8'%20stroke-linecap='round'%20stroke-linejoin='round'%20d='%20M%20-45%20-53%20L%20-15%20-53%20L%20-15%20-19.2%20L%20-30.3%20-7.5%20L%20-30.3%2027.5%20L%20-0%2045%20L%2030.3%2027.5%20L%2030.3%20-7.5%20L%2015%20-19.2%20L%2015%20-53%20L%2045%20-53%20'%20/%3e%3c/svg%3e" alt="" />
-            <span class="talmo-name">Talmo Lab</span>
-          </a>
-          <button
-            type="button"
-            id="theme-toggle"
-            class="theme-toggle"
-            aria-label="Toggle light/dark mode"
-            title="Toggle light/dark mode"
-          >
-            <svg
-              class="theme-toggle-moon"
-              viewBox="0 0 24 24"
-              width="20"
-              height="20"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              aria-hidden="true"
-            >
-              <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
-            </svg>
-            <svg
-              class="theme-toggle-sun"
-              viewBox="0 0 24 24"
-              width="20"
-              height="20"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              aria-hidden="true"
-            >
-              <circle cx="12" cy="12" r="5" />
-              <line x1="12" y1="1" x2="12" y2="3" />
-              <line x1="12" y1="21" x2="12" y2="23" />
-              <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" />
-              <line x1="18.36" y1="18.36" x2="19.78" y2="19.78" />
-              <line x1="1" y1="12" x2="3" y2="12" />
-              <line x1="21" y1="12" x2="23" y2="12" />
-              <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" />
-              <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
-            </svg>
-          </button>
           <button type="button" id="oauthSigninBtn" class="primary oauth-signin-btn">Sign in with EMBER</button>
           <div id="oauthSignedIn" class="oauth-signed-in" hidden>
             <span id="oauthAvatar" class="oauth-avatar" tabindex="0" aria-label="Account menu"></span>
@@ -169,15 +106,6 @@ try {
         <span id="project-location" class="ember-bar-location">No project open</span>
         <span id="host-status" class="ember-bar-status" role="status"></span>
         <button type="button" id="close-project-btn" class="ember-bar-button" hidden>Close project</button>
-        <!-- Text is filled in from __APP_VERSION__ by src/main.ts. -->
-        <a
-          id="version-indicator"
-          class="ember-bar-version"
-          href="https://github.com/brain-bbqs/ember-sleap"
-          target="_blank"
-          rel="noopener"
-          title="View source on GitHub"
-        ></a>
       </div>
 
       <div id="predictions" class="predictions" hidden>
@@ -195,6 +123,51 @@ try {
 
       <!-- The SLEAP app mounts here (src/ui/sleapComponent.ts decides what that is) and fills the window. -->
       <div id="sleap-root" class="sleap-root"></div>
+
+      <!-- The BBQS footer, without its What's New and issue links: the version stamp bottom-left,
+           the brand marks bottom-right. A row of the page's column rather than pinned over it, so
+           the app above ends where it begins. -->
+      <footer class="page-footer-bar">
+        <div class="footer-left">
+          <div class="footer-row">
+            <!-- Text is filled in from __APP_VERSION__ by src/main.ts. -->
+            <a
+              id="version-indicator"
+              class="version-link"
+              href="https://github.com/brain-bbqs/ember-sleap"
+              target="_blank"
+              rel="noopener"
+              title="View source on GitHub"
+            ></a>
+          </div>
+        </div>
+        <div class="footer-brands">
+          <!-- The Talmo Lab mark is a wordless flask, so its name is spelled out beneath it, as
+               clip-extractor and encoding-helper show it; this page is dark only, so it takes the
+               flask drawn for dark backgrounds. -->
+          <a
+            class="footer-brand-link captioned"
+            href="https://talmolab.org/"
+            target="_blank"
+            rel="noopener"
+            aria-label="Talmo Lab"
+            title="Talmo Lab"
+          >
+            <img class="footer-brand-logo" src="data:image/svg+xml,%3c!--%20Talmo%20Lab%20logo,%20white-stroke%20variant%20for%20dark%20backgrounds;%20see%20talmolab-logo.svg.%20--%3e%3csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='-60%20-65%20120%20120'%3e%3ccircle%20fill='%23b3e5fc'%20cx='-3'%20cy='-50'%20r='3'%20opacity='0.3'%20/%3e%3ccircle%20fill='%23b3e5fc'%20cx='2'%20cy='-40'%20r='3'%20opacity='0.5'%20/%3e%3ccircle%20fill='%23b3e5fc'%20cx='-1'%20cy='-30'%20r='3'%20opacity='0.7'%20/%3e%3ccircle%20fill='%23b3e5fc'%20cx='3'%20cy='-20'%20r='3'%20opacity='0.9'%20/%3e%3cpath%20fill='%2381d4fa'%20d='%20M%200.0%20-15.0%20L%20-21.7%20-2.5%20L%20-21.7%2022.5%20L%20-0.0%2035.0%20L%2021.7%2022.5%20L%2021.7%20-2.5%20z%20'%20/%3e%3cpath%20fill='%23b3e5fc'%20d='%20M%200.0%20-15.0%20L%20-21.7%20-2.5%20L%200%2010%20L%2021.7%20-2.5%20z%20'%20/%3e%3cpath%20fill='none'%20stroke='%23ffffff'%20stroke-width='8'%20stroke-linecap='round'%20stroke-linejoin='round'%20d='%20M%20-45%20-53%20L%20-15%20-53%20L%20-15%20-19.2%20L%20-30.3%20-7.5%20L%20-30.3%2027.5%20L%20-0%2045%20L%2030.3%2027.5%20L%2030.3%20-7.5%20L%2015%20-19.2%20L%2015%20-53%20L%2045%20-53%20'%20/%3e%3c/svg%3e" alt="" />
+            <span class="footer-brand-name">Talmo Lab</span>
+          </a>
+          <a
+            class="footer-brand-link"
+            href="https://centerforopenneuroscience.org"
+            target="_blank"
+            rel="noopener"
+            aria-label="Center for Open Neuroscience"
+            title="Center for Open Neuroscience"
+          >
+            <img class="footer-brand-logo" src="./assets/con-logo-F8_OuRqh.png" alt="Center for Open Neuroscience" />
+          </a>
+        </div>
+      </footer>
     </main>
 
     <dialog id="open-dialog" class="page-dialog open-dialog" aria-labelledby="open-dialog-title">
