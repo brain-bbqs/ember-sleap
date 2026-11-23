@@ -1,20 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { createOAuth, OAUTH_CLIENT_ID, OAUTH_PKCE_STORAGE_KEY, SIGN_IN_UNAVAILABLE } from "../../src/lib/oauth";
+import { createOAuth, OAUTH_CLIENT_ID, OAUTH_PKCE_STORAGE_KEY } from "../../src/lib/oauth";
 
 describe("createOAuth", () => {
-  it("has no client until ember-sleap's OAuth app is registered", () => {
-    expect(OAUTH_CLIENT_ID).toBe("");
-    expect(createOAuth()).toBe(null);
-    expect(SIGN_IN_UNAVAILABLE).toContain("not available yet");
+  it("signs in as ember-sleap's own OAuth app on EMBER", () => {
+    expect(OAUTH_CLIENT_ID).toBe("cDxcl68boqpjgBoEXfh2bnuYxwWQLMdYfMnVrHNA");
   });
 
-  it("builds the PKCE client once there is a client id", () => {
-    const client = createOAuth("a-registered-client-id");
-    expect(client).not.toBe(null);
-    expect(typeof client?.startLogin).toBe("function");
-    expect(typeof client?.handleRedirectCallback).toBe("function");
-    expect(typeof client?.ensureFreshToken).toBe("function");
-    expect(typeof client?.revokeToken).toBe("function");
+  it("builds the PKCE client", () => {
+    const client = createOAuth();
+    expect(typeof client.startLogin).toBe("function");
+    expect(typeof client.handleRedirectCallback).toBe("function");
+    expect(typeof client.ensureFreshToken).toBe("function");
+    expect(typeof client.revokeToken).toBe("function");
   });
 
   it("keeps its pending sign-in under this app's own key", () => {

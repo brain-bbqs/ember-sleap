@@ -47,7 +47,7 @@ Updated 2026-11-22. Nothing upstream has been touched: no fork, no PRs, no propo
 
 | Milestone | ember-sleap part | State |
 | --- | --- | --- |
-| M1 | Scaffold from `bbqs-web-app-template`, with sign-in | Done. Sign-in is wired through `@brain-bbqs/ember-client` but stays off (`OAUTH_CLIENT_ID` is empty) until EMBER registers an OAuth app. Served at the GitHub Pages default, `brain-bbqs.github.io/ember-sleap/`, with no custom domain for now. |
+| M1 | Scaffold from `bbqs-web-app-template`, with sign-in | Done. Sign-in goes through `@brain-bbqs/ember-client` with ember-sleap's own OAuth app on EMBER; its redirect URIs are still to confirm ([EMBER sign-in](#ember-sign-in)). Served at the GitHub Pages default, `brain-bbqs.github.io/ember-sleap/`, with no custom domain for now. |
 | M3 | Mount the component | Done against the stand-in, with `compute.builtIn: false` and every `pageEffects` off. |
 | M4 | Open and save on EMBER as BIDS derivatives | Open verified live (dandiset 000398: `glob` listing, `/download/` to a presigned S3 link, ranged read of the extensionless URL by declared type). Save runs end to end in Playwright against a routed archive (dandi-etag hashed in a worker pool, multipart upload, asset create or replace, `dataset_description.json` and `.bidsignore` on first save, one labels file per source project, and a replace / keep both / cancel question when that file exists); not yet run against the real archive. |
 | M5 | Model sources | Hugging Face, EMBER `derivatives/sleap/models/` and `models.json` index sources written and unit-tested ([MODEL_INDEX.md](MODEL_INDEX.md)). A card names the model folder of each file, so a top-down model carries its centroid and centered-instance folders (on EMBER, a subfolder per head) and a track job sends both; a folder without its config and checkpoint, or a top-down card without a folder per head, is left out, and folders that are not one top-down model's are listed as a model each. Each card says where it was found, and index entries replace the direct listing of a Hugging Face or EMBER model whose every folder they name. `docs/examples/models.json` is a valid example index, and `npm run check-model-index -- <file>` checks one before it is published. Not live: Hugging Face is unreachable from the build sandbox, and the index dandiset does not exist (`MODEL_INDEX_URL` is null). |
@@ -248,25 +248,20 @@ Other repositories:
 ### EMBER sign-in
 
 ember-sleap has its own public OAuth app on EMBER (PKCE, no client secret), separate from bbqs-uploader's so each tool can be revoked and audited on its own.
+Its client ID, `cDxcl68boqpjgBoEXfh2bnuYxwWQLMdYfMnVrHNA`, is public, so it lives in `src/lib/oauth.ts` the way bbqs-uploader's lives in its source.
+On 2026-11-23, EMBER's token endpoint recognized it as a public client: an exchange with a dummy code returned `invalid_grant`, where an unknown ID returns `invalid_client`.
 
-| Setting | Value |
+Sign-in sends the page's own address (origin and path, without the query) as the redirect URI.
+EMBER's OAuth server (django-oauth-toolkit) matches redirect URIs exactly by default, so each address the page is served from has to be registered on the app:
+
+| Where | Redirect URI |
 | --- | --- |
-| Client ID | `cDxcl68boqpjgBoEXfh2bnuYxwWQLMdYfMnVrHNA` |
-| Authorize and token endpoints | `https://api-dandi.emberarchive.org/oauth/` (`EMBER_INSTANCE.oauth` in ember-client) |
-| PKCE storage key | `ember-sleap.oauth-pkce.v1` (our choice; follows bbqs-uploader's `bbqs-uploader.oauth-pkce.v1`) |
+| Production | `https://brain-bbqs.github.io/ember-sleap/` |
+| PR previews | `https://brain-bbqs.github.io/ember-sleap/pr-preview/pr-<n>/`, one per PR |
+| `npm run dev` | `http://localhost:5173/` |
+| `npm run preview` and Playwright | `http://localhost:4173/` |
 
-The client ID is public, so it lives in the app's source like bbqs-uploader's:
-
-```ts
-import { createOAuthClient } from "@brain-bbqs/ember-client";
-
-export const oauth = createOAuthClient({
-  clientId: "cDxcl68boqpjgBoEXfh2bnuYxwWQLMdYfMnVrHNA",
-  storageKey: "ember-sleap.oauth-pkce.v1",
-});
-```
-
-Checked on 2026-11-23: EMBER's token endpoint knows this client ID as a public client. An exchange with a dummy code returns `invalid_grant`, while an unknown ID returns `invalid_client`. Not yet checked: which redirect URIs are registered. ember-client sends the URL the page is served from as the redirect URI by default, so every serving URL has to be registered before sign-in works from it.
+Which of these are registered is not yet confirmed; it cannot be checked without signing in through a browser.
 
 ### EMBER storage
 
@@ -356,7 +351,7 @@ M1 to M4 is the end-to-end prototype with stubbed compute (about 5 to 8 weeks). 
 
 - [ ] **Talmo Lab:** agree the component contract (mount options, host callbacks) and the PR order.
 - [x] **EMBER admins:** register a public OAuth app for ember-sleap (client ID `cDxcl68boqpjgBoEXfh2bnuYxwWQLMdYfMnVrHNA`).
-- [ ] **EMBER admins:** confirm every serving URL is a registered redirect URI, including PR previews and local dev. Production depends on the final hostname.
+- [ ] **EMBER admins:** confirm the redirect URIs listed under [EMBER sign-in](#ember-sign-in) are registered, and how PR previews should be handled, since each has its own address.
 - [ ] **EMBER data team:** approve the `derivatives/sleap/` layout; confirm drafts holding `.slp` and `.ckpt` files can be published.
 - [ ] **Proxy team:** caller auth, job API, file-type metadata on input URLs, result locations, who finishes the SLEAP Pennsieve app.
 - [x] **Us:** hostname. The GitHub Pages default (`https://brain-bbqs.github.io/ember-sleap/`) for now; a `*.brain-bbqs.org` name later needs `public/CNAME`, `preview.yml` and a DNS record. The EMBER OAuth app's redirect URIs follow whichever is in use.

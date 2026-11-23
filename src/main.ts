@@ -34,7 +34,7 @@ import type { ModelSource } from "./lib/modelCatalogue";
 import { createEmberModelSource } from "./lib/modelEmber";
 import { createHuggingFaceSource } from "./lib/modelHuggingFace";
 import { createIndexSource, MODEL_INDEX_URL } from "./lib/modelIndex";
-import { createOAuth, SIGN_IN_UNAVAILABLE } from "./lib/oauth";
+import { createOAuth } from "./lib/oauth";
 import { settingsStore, STORAGE_KEY, THEME_KEY } from "./lib/settings";
 import {
   EMBEDDED_PAGE_EFFECTS,
@@ -118,11 +118,6 @@ function say(target: HTMLElement, text: string, tone?: "ok" | "err"): void {
   target.classList.toggle("err", tone === "err");
 }
 
-/** Wherever the person is looking: the picker, or the open project. */
-function notify(text: string, tone?: "ok" | "err"): void {
-  say(els.appCard.hidden ? els.openStatus : els.hostStatus, text, tone);
-}
-
 // Each write re-reads the stored record and changes only its own field, so a listing here never
 // puts back tokens another tab has since refreshed or signed out of.
 function saveDandisetId(dandisetId: string): void {
@@ -164,7 +159,7 @@ function refreshTokens(client: OAuthClient, current: OAuthTokenSet): Promise<voi
 
 /** The archive config for a dandiset, refreshing an access token that is about to expire. */
 async function configFor(dandisetId: string): Promise<ArchiveConfig> {
-  if (tokens && oauth) await refreshTokens(oauth, tokens);
+  if (tokens) await refreshTokens(oauth, tokens);
   return resolveConfig({ dandisetId, oauthAccessToken: tokens?.accessToken });
 }
 
@@ -452,12 +447,10 @@ function confirmDiscard(question: string): boolean {
   return !hasEdits() || window.confirm(question);
 }
 
-const callbackTokens = oauth
-  ? await oauth.handleRedirectCallback().catch((e: unknown) => {
-      console.warn("OAuth sign-in callback failed:", e);
-      return null;
-    })
-  : null;
+const callbackTokens = await oauth.handleRedirectCallback().catch((e: unknown) => {
+  console.warn("OAuth sign-in callback failed:", e);
+  return null;
+});
 const stored = settingsStore.load();
 tokens = callbackTokens ?? stored?.oauth ?? null;
 storedRefreshToken = stored?.oauth?.refreshToken;
@@ -465,10 +458,7 @@ if (callbackTokens) saveTokens(callbackTokens);
 renderAuth();
 
 bindAccountMenu(account, {
-  onSignIn: () => {
-    if (oauth) void oauth.startLogin();
-    else notify(SIGN_IN_UNAVAILABLE, "err");
-  },
+  onSignIn: () => void oauth.startLogin(),
   onSignOut: () => {
     if (
       !confirmDiscard(
@@ -482,7 +472,7 @@ bindAccountMenu(account, {
     tokens = null;
     saveTokens(null);
     renderAuth();
-    if (signedOut && oauth) void oauth.revokeToken(signedOut);
+    if (signedOut) void oauth.revokeToken(signedOut);
   },
 });
 

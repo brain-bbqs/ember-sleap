@@ -9,12 +9,25 @@ import { resolve } from "node:path";
 import { throwingStorage, type FetchRouter } from "@brain-bbqs/test-utils/vitest";
 import { countChangelogVersions } from "@brain-bbqs/ui";
 import { beforeAll, describe, expect, it, vi } from "vitest";
-import { SIGN_IN_UNAVAILABLE } from "../../src/lib/oauth";
+import { OAUTH_CLIENT_ID } from "../../src/lib/oauth";
 import { STORAGE_KEY, THEME_KEY } from "../../src/lib/settings";
 import { bootMain, el } from "./helpers/mainHarness";
 
 const WHATS_NEW_RECENT_VERSIONS = 3;
 let fetchMock: FetchRouter;
+
+// The real PKCE client, with the browser navigation it ends in recorded instead (jsdom has none).
+const navigations = vi.hoisted(() => [] as string[]);
+vi.mock("../../src/lib/oauth", async (importOriginal) => {
+  const real = await importOriginal<typeof import("../../src/lib/oauth")>();
+  return {
+    ...real,
+    createOAuth: () => {
+      const client = real.createOAuth();
+      return { ...client, startLogin: () => client.startLogin((url) => void navigations.push(url)) };
+    },
+  };
+});
 
 beforeAll(async () => {
   fetchMock = (await bootMain()).fetch!;
@@ -39,10 +52,15 @@ describe("main.ts boot", () => {
     expect(el<HTMLInputElement>("dandiset-input").value).toBe("");
   });
 
-  it("says sign-in is not available yet rather than sending people to a refusal", () => {
+  it("sends sign-in to EMBER's authorize page as ember-sleap, to come back to this page", async () => {
     el("oauthSigninBtn").click();
-    expect(el("open-status").textContent).toBe(SIGN_IN_UNAVAILABLE);
-    expect(el("open-status").classList.contains("err")).toBe(true);
+    await vi.waitFor(() => expect(navigations).toHaveLength(1));
+    const authorize = new URL(navigations[0]);
+    expect(`${authorize.origin}${authorize.pathname}`).toBe("https://api-dandi.emberarchive.org/oauth/authorize/");
+    expect(authorize.searchParams.get("client_id")).toBe(OAUTH_CLIENT_ID);
+    expect(authorize.searchParams.get("redirect_uri")).toBe(`${location.origin}${location.pathname}`);
+    expect(authorize.searchParams.get("code_challenge_method")).toBe("S256");
+    expect(el("open-status").textContent).toBe("");
   });
 
   it("asks for a dandiset id when the field holds none", () => {

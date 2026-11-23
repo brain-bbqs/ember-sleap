@@ -2,7 +2,6 @@
 // `?test&mock_project`: the page boots straight into the embedded app on a synthesized project,
 // with in-memory saves, fixed models and the compute stub, and nothing reaching the network.
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import { SIGN_IN_UNAVAILABLE } from "../../src/lib/oauth";
 import { MOCK_MODELS, MOCK_PREDICTIONS_PATH, MOCK_PROJECT_PATH } from "../../src/lib/testInjection";
 import { bootMain, el, role } from "./helpers/mainHarness";
 
@@ -107,11 +106,6 @@ describe("?test&mock_project", () => {
     const log = role("job-log").textContent;
     expect(log).toContain("Model: mock:top-down\n  model folder centroid: config data:,mock-centroid-config;");
     expect(log).toContain("  model folder centered_instance: config data:,mock-centered-instance-config;");
-  });
-
-  it("says sign-in is not available yet where the person is looking", () => {
-    el("oauthSigninBtn").click();
-    expect(el("host-status").textContent).toBe(SIGN_IN_UNAVAILABLE);
   });
 
   it("guards unload, and asks before closing, while the project has edits", () => {

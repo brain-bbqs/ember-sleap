@@ -17,7 +17,9 @@ Copy this file to `docs/user_tests/<tester>.md`, fill it in, and open it as a PR
 - [ ] `?dandiset=000398` in the address bar lists the projects on load
 - [ ] "Close project" returns to the picker, asking first if there are unsaved edits
 
-## Saving (needs sign-in, once EMBER has an OAuth app for this page)
+## Saving (needs sign-in)
+
+- [ ] "Sign in" goes to EMBER's GitHub sign-in and comes back to this page signed in
 
 - [ ] Signing in shows the account in the header and suggests your own dandisets in the dandiset field
 - [ ] On a dandiset you own, "Make an edit" then Ctrl+S inside the app saves to `derivatives/sleap/sub-.../beh/..._desc-labels<Source>_pose.slp`, named after the project (for example `desc-labelsCamTop` for `cam-top.slp`)

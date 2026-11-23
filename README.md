@@ -28,7 +28,7 @@ Swapping in the real package is a change to one function, `loadSleapComponent` i
 | ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------- |
 | Open a `.slp` or `.pkg.slp` from any readable dandiset | Works against the live archive                                                                                            |
 | Save to `derivatives/sleap/` as a BIDS derivative      | Works end to end against a mocked archive; needs sign-in                                                                  |
-| EMBER sign-in                                          | Wired, but off until EMBER registers an OAuth app for this page                                                           |
+| EMBER sign-in                                          | On, with ember-sleap's own OAuth app on EMBER; redirect URIs still to confirm                                             |
 | Model catalogue (Hugging Face, EMBER, central index)   | Sources written and unit-tested, top-down models included; the index dandiset does not exist yet                          |
 | Training and inference                                 | Run on an in-browser stub until the central Pennsieve proxy's job API exists ([docs/COMPUTE_API.md](docs/COMPUTE_API.md)) |
 

@@ -64,7 +64,7 @@ There is one named exception: the central Pennsieve compute proxy, at the base U
 ## Sign-in and the token lifecycle
 
 - **Grant:** OAuth 2 authorization code with PKCE, through `@brain-bbqs/ember-client`, as a public client with no secret, requesting EMBER's default scope.
-  ember-sleap's OAuth application is not registered on EMBER yet (`OAUTH_CLIENT_ID` in `src/lib/oauth.ts` is empty), so sign-in is off until it is.
+  ember-sleap is its own OAuth application on EMBER (`OAUTH_CLIENT_ID` in `src/lib/oauth.ts`), separate from its sibling apps' so each can be revoked on its own.
 - **Storage:** the PKCE verifier and state wait in `sessionStorage` across the redirect; the access and refresh tokens persist in `localStorage` under `ember-sleap.settings.v1`, an accepted trade-off by the checklist above.
 - **Lifetime and refresh:** access tokens live as long as EMBER's OAuth server sets.
   Within 60 seconds of expiry, the next call to EMBER (or to the compute proxy) first refreshes them with the `refresh_token` grant.
