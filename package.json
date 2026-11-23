@@ -18,7 +18,8 @@
     "format": "prettier --config configs/prettier.config.js --write .",
     "format:check": "prettier --config configs/prettier.config.js --check .",
     "storybook": "storybook dev -p 6006 --config-dir configs/storybook",
-    "build-storybook": "storybook build --config-dir configs/storybook"
+    "build-storybook": "storybook build --config-dir configs/storybook",
+    "check-model-index": "node scripts/check-model-index.mjs"
   },
   "devDependencies": {
     "@brain-bbqs/config": "^0.2.0",

@@ -4,8 +4,8 @@ import type { ModelCard, ModelFile, ModelHead, ModelQuery, ModelSkeleton } from 
 export type ModelLocation =
   { kind: "huggingface"; repo: string; revision: string } | { kind: "ember"; dandisetId: string; path: string };
 
-/** Where the host found a card: the repository or folder it lists. */
-export type ModelCardSource = ModelLocation;
+/** Where the host found a card: a repository or folder listed directly, or an index entry naming one. */
+export type ModelCardSource = ModelLocation | { kind: "index"; target: ModelLocation };
 
 /**
  * A card as this page's model sources list it. `source` is the host's own: the merge in listModels
@@ -16,7 +16,7 @@ export interface HostModelCard extends ModelCard {
   source?: ModelCardSource;
 }
 
-/** One place models are found: Hugging Face, or EMBER files. */
+/** One place models are found: Hugging Face, EMBER files, or the central index. */
 export interface ModelSource {
   /** Shown in warnings when the source fails. */
   name: string;
@@ -26,6 +26,11 @@ export interface ModelSource {
 export interface ListModelsOptions {
   /** Hears about a source that failed; its models are left out and the rest are still listed. */
   onWarning?: (sourceName: string, error: unknown) => void;
+  /**
+   * Hears each direct listing an index entry replaced. A job may still name it by its own id, as a
+   * train result's `model_dir` names the EMBER folder the job wrote.
+   */
+  onReplaced?: (card: HostModelCard) => void;
   signal?: AbortSignal;
 }
 
@@ -143,20 +148,48 @@ export function modelFilesProblem(heads: readonly ModelHead[], files: readonly M
   return folders.size === 1 ? null : `a model that is not top-down needs one model folder, not ${folders.size}`;
 }
 
+/** The location a card's files are kept at, the one an index entry names for an index card. */
+function locationOf(source: ModelCardSource): ModelLocation {
+  return source.kind === "index" ? source.target : source;
+}
+
+/**
+ * One key per model folder a card's files are kept in, however the location and folder split its
+ * path and whatever revision or trailing slash they name. The Hub ignores case in repository ids.
+ */
+function folderKeys(source: ModelCardSource, files: readonly ModelFile[]): string[] {
+  const location = locationOf(source);
+  const base =
+    location.kind === "huggingface"
+      ? `huggingface:${location.repo.toLowerCase()}`
+      : `ember:${location.dandisetId}/${location.path.replace(/\/+$/, "")}`;
+  return [...filesByFolder(files).keys()].map((folder) => (folder ? `${base}/${folder}` : base));
+}
+
+/** Whether index entries name every model folder of a card listed directly, so it is not listed again. */
+function isIndexed(card: HostModelCard, indexed: ReadonlySet<string>): boolean {
+  if (!card.source || card.source.kind === "index") return false;
+  const keys = folderKeys(card.source, card.files);
+  return keys.length > 0 && keys.every((key) => indexed.has(key));
+}
+
 function describeLocation(location: ModelLocation): string {
   return location.kind === "huggingface" ? `Hugging Face ${location.repo}` : `EMBER dandiset ${location.dandisetId}`;
 }
 
 /** Where a listed model comes from, as its `sourceLabel` puts it for the picker. */
 export function describeSource(source: ModelCardSource): string {
-  return `from ${describeLocation(source)}`;
+  return source.kind === "index"
+    ? `from the model index (${describeLocation(source.target)})`
+    : `from ${describeLocation(source)}`;
 }
 
 export function matchesText(card: HostModelCard, text: string): boolean {
   const needle = text.trim().toLowerCase();
   if (!needle) return true;
-  // The repository too, so a model is found by the Hugging Face id it is kept under.
-  const repo = card.source?.kind === "huggingface" ? card.source.repo : "";
+  // The repository too, so an index entry is still found by the Hugging Face id it replaced.
+  const location = card.source && locationOf(card.source);
+  const repo = location?.kind === "huggingface" ? location.repo : "";
   return [card.id, card.name, card.species ?? "", repo].some((field) => field.toLowerCase().includes(needle));
 }
 
@@ -174,15 +207,20 @@ export function skeletonFit(card: ModelCard, nodes: readonly string[]): Skeleton
 
 /**
  * Every source's models, merged: a failed source is reported and skipped rather than failing the
- * list, the first source to name an id keeps it, and a skeleton query puts exact matches before
- * models of unknown skeleton and drops the rest. Each card that says where it was found gets a `sourceLabel` for the picker.
+ * list, the first source to name an id keeps it, index entries replace a direct listing whose every
+ * model folder they name, and a skeleton query puts exact matches before models of unknown skeleton
+ * and drops the rest. Each card that says where it was found gets a `sourceLabel` for the picker.
  */
 export async function listModels(
   sources: ModelSource[],
   query: ModelQuery,
   options: ListModelsOptions = {},
 ): Promise<HostModelCard[]> {
-  const { onWarning = (name, e) => console.warn(`Could not list models from ${name}:`, e), signal } = options;
+  const {
+    onWarning = (name, e) => console.warn(`Could not list models from ${name}:`, e),
+    onReplaced,
+    signal,
+  } = options;
   const settled = await Promise.allSettled(sources.map((source) => source.list(query, signal)));
   signal?.throwIfAborted();
 
@@ -200,7 +238,15 @@ export async function listModels(
     }
   });
 
-  const collapsed = merged.map((card) => (card.source ? { ...card, sourceLabel: describeSource(card.source) } : card));
+  // Whatever revision either names: the index pins one and carries curated metadata, so it wins.
+  const indexed = new Set(
+    merged.flatMap((card) => (card.source?.kind === "index" ? folderKeys(card.source, card.files) : [])),
+  );
+  const collapsed: HostModelCard[] = [];
+  for (const card of merged) {
+    if (isIndexed(card, indexed)) onReplaced?.(card);
+    else collapsed.push(card.source ? { ...card, sourceLabel: describeSource(card.source) } : card);
+  }
 
   const texted = query.text ? collapsed.filter((card) => matchesText(card, query.text!)) : collapsed;
   const nodes = query.skeletonNodes;

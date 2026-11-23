@@ -175,6 +175,7 @@ Each event has the same shape sleap-app's job viewer already consumes from SLEAP
 
 - A train result's `model_dir` is the trained model's card id, `ember:<dandisetId>/<model_id>` (the id the page's EMBER model source gives the folder), so sleap-app can name it in a follow-up track job's `model_paths`.
   `model_path` is the same folder relative to the dandiset (`derivatives/sleap/models/<model_id>/`), and `labels_path` echoes the spec's `labels_path`, which sleap-app uses as that track job's `data_path`.
+  The page resolves `model_dir` even when an index entry for the same folder has taken its place in the model list.
 - A track job naming a card the page has not listed makes the page list models once more before it refuses the job, so the proxy must have written the model folder (its `training_config.yaml` and `best.ckpt`, in each head's subfolder when the job trained several) to the draft before it reports the train result.
   The in-browser stub writes nothing, so it lists the models it trained itself, under the same ids.
 - A track result's `predictions` are paths relative to the dandiset, in the layout under [Inputs, models and results](#inputs-models-and-results).
@@ -195,6 +196,7 @@ Each event has the same shape sleap-app's job viewer already consumes from SLEAP
 - **Model file URLs** are one of:
   - `https://huggingface.co/<repo>/resolve/<revision>/<file>`: public repos need no token; **gated repos need a Hugging Face token held on the proxy side**, never sent from the browser.
   - `https://api-dandi.emberarchive.org/api/assets/{asset_id}/download/`: an EMBER asset the service account downloads with its own EMBER credentials.
+  - `ember://<dandiset>/<path>`: an EMBER asset named by dandiset and path rather than id, each path segment percent-encoded, for entries in the central model index; the proxy decodes the path and resolves it through the EMBER API.
 - **Results go back to EMBER** in the source dandiset's draft, under `derivatives/sleap/`, written by the service account:
   - trained models under `derivatives/sleap/models/<model-id>/` (`training_config.yaml`, `best.ckpt`, and a `model_card.json`); a job training several heads, as top-down's `centroid` and `centered_instance`, writes each head's `training_config.yaml` and `best.ckpt` to a subfolder named after it, with one `model_card.json` listing every head in `models/<model-id>/` ([MODEL_INDEX.md](MODEL_INDEX.md#model-folders-on-ember-model_cardjson));
   - predictions as `derivatives/sleap/sub-<label>/[ses-<label>/]beh/sub-<label>[_ses-<label>][_task-…][_acq-…][_run-…][_recording-…]_desc-predictions<Source>_pose.slp`, named the way the page names labels files ([BIDS derivatives layout](DEVELOPMENT_PLAN.md#bids-derivatives-layout); `predictionsPath` in `src/lib/bidsDerivatives.ts`), so each project's predictions sit beside its own labels file and two projects of one session never share one.

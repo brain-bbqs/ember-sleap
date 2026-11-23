@@ -34,7 +34,7 @@ A **stand-in** (`src/ui/sleapStandIn.ts`) still drives the host's callbacks for 
 | Start a new project on a dandiset's videos             | Picking a dandiset with no SLEAP project, or New Project, starts one in the SLEAP app, which reads the videos from EMBER  |
 | Save to `derivatives/sleap/` as a BIDS derivative      | Works end to end against a mocked archive; needs sign-in                                                                  |
 | EMBER sign-in                                          | On, with ember-sleap's own OAuth app on EMBER; redirect URIs still to confirm                                             |
-| Model catalogue (Hugging Face, EMBER)                  | Sources written and unit-tested, top-down models included; the central index is held for a follow-up PR                   |
+| Model catalogue (Hugging Face, EMBER, central index)   | Sources written and unit-tested, top-down models included; the index dandiset does not exist yet                          |
 | Training and inference                                 | Run on an in-browser stub until the central Pennsieve proxy's job API exists ([docs/COMPUTE_API.md](docs/COMPUTE_API.md)) |
 | Models and compute in the real app                     | Not wired through the host yet (plan PRs 7b and 7c): the real app offers its own, the stand-in the host's                 |
 
