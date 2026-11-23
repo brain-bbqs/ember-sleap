@@ -9,12 +9,11 @@
 // source's folders below its subject and session (datatype folders such as `beh` aside), what its
 // own desc adds after `labels` or `predictions`, and the rest of its name (minus a trailing `pose`
 // or `labels`). So `sub-01/ses-01/beh/cam-top.slp` saves to
-// `derivatives/sleap/sub-01/ses-01/beh/sub-01_ses-01_desc-labelsCamTop_pose.slp`. Predictions are
-// named the same way, as `desc-predictions<word>`, so proofreading them saves to that same file.
-// Labels a training run was sent unsaved go beside them as a package of their own,
-// `desc-trainingset<word><yyyymmddhhmmss>` (UTC). A source that is such a package reads as the word
-// between `trainingset` and its time: its predictions are its source's, and its labels take its
-// source's word but stay a `.pkg.slp`, so beside a plain `.slp` source's labels they are a file apart.
+// `derivatives/sleap/sub-01/ses-01/beh/sub-01_ses-01_desc-labelsCamTop_pose.slp`, and proofreading
+// its `desc-predictionsCamTop` predictions saves to that same file. A training package,
+// `desc-trainingset<word><yyyymmddhhmmss>` (UTC), reads as the word between `trainingset` and its
+// time: its labels take its source's word but stay a `.pkg.slp`, so beside a plain `.slp` source's
+// labels they are a file apart.
 
 export const DERIVATIVES_ROOT = "derivatives/sleap";
 export const DATASET_DESCRIPTION_PATH = `${DERIVATIVES_ROOT}/dataset_description.json`;
@@ -228,38 +227,6 @@ export function labelsSavePath(sourcePath: string, fileName: string, entities: B
   return sourcePosePath(sourcePath, "labels", entities, ext);
 }
 
-/** Where inference for a source writes its predictions: `desc-predictions<word>`, its labels file's twin. */
-export function predictionsPath(sourcePath: string, entities: BidsEntities): string {
-  return sourcePosePath(sourcePath, "predictions", entities, "slp");
-}
-
-/**
- * Where labels a training run was sent unsaved are kept: beside the source's labels file, as a
- * package named `desc-trainingset<word><yyyymmddhhmmss>` for the UTC time `at`, so every run has a
- * snapshot of its own and none goes over the labels file.
- */
-export function trainingPackagePath(sourcePath: string, entities: BidsEntities, at: Date): string {
-  const stamp = at.toISOString().replace(/\D/g, "").slice(0, 14);
-  return sourcePosePath(sourcePath, "trainingset", entities, "pkg.slp", stamp);
-}
-
-/** What every training package of a source starts with, whatever its time. */
-export function trainingPackagePrefix(sourcePath: string, entities: BidsEntities): string {
-  return labelsPathPrefix(sourcePosePath(sourcePath, "trainingset", entities, "pkg.slp"));
-}
-
-/**
- * The times to name training packages by: `now`, but at least a second after the one before, since
- * a package's name only tells seconds apart.
- */
-export function packageClock(now: () => Date): () => Date {
-  let last = Number.NEGATIVE_INFINITY;
-  return () => {
-    last = Math.max(now().getTime(), last + 1000);
-    return new Date(last);
-  };
-}
-
 /**
  * A labels file's `n`th alternative name, `desc-labels<word><n>`, for keeping both when a save's
  * own target already holds labels.
@@ -271,10 +238,6 @@ export function numberedLabelsPath(path: string, n: number): string {
 /** What a labels file's name and every numbered alternative to it start with. */
 export function labelsPathPrefix(path: string): string {
   return path.replace(POSE_SUFFIX, "");
-}
-
-export function modelFolderPath(modelId: string): string {
-  return `${DERIVATIVES_ROOT}/models/${modelId}/`;
 }
 
 export interface DatasetDescriptionInput {

@@ -213,57 +213,6 @@ test.describe("EMBER storage", () => {
     expect(archive.created.map((c) => c.path)).not.toContain(predictions);
   });
 
-  test("opens the predictions a finished inference job wrote, once they are on EMBER, and saves them as labels", async ({
-    page,
-  }) => {
-    // Hugging Face lists nothing, so the dandiset's own model folder is the one to predict with.
-    await page.route("https://huggingface.co/**", (route) =>
-      route.fulfill({ status: 200, headers: CORS, contentType: "application/json", body: "[]" }),
-    );
-    // A package's own labels stay a package, so the predictions' labels (a plain .slp) are told
-    // apart from what a save of the source would write.
-    const archive = await routeArchive(page, [
-      { asset_id: "a1", path: "sub-01/ses-02/beh/cam-top.pkg.slp", size: 64 },
-      { asset_id: "m1", path: "derivatives/sleap/models/mouse/training_config.yaml", size: 1 },
-      { asset_id: "m2", path: "derivatives/sleap/models/mouse/best.ckpt", size: 1 },
-    ]);
-    const downloads: string[] = [];
-    page.on("request", (request) => {
-      const asset = /\/assets\/([^/]+)\/download\/$/.exec(request.url());
-      if (asset) downloads.push(asset[1]);
-    });
-    const folder = "derivatives/sleap/sub-01/ses-02/beh";
-    const predictions = `${folder}/sub-01_ses-02_desc-predictionsCamTop_pose.slp`;
-    await openProject(page, "sub-01/ses-02/beh/cam-top.pkg.slp");
-    await role(page, "list-models").click();
-    await role(page, "predict").first().click();
-    await expect(role(page, "job-state")).toHaveText("completed", { timeout: 15_000 });
-    await expect(page.locator("#predictions-list button")).toHaveText([predictions]);
-
-    // The stub writes nothing, so the archive has no such file until the test puts it there.
-    await page.locator(`.predictions-open[data-path="${predictions}"]`).click();
-    await expect(page.locator("#predictions-status")).toHaveText(
-      `${predictions} is not on EMBER yet: the job may still be writing it. Try again in a moment.`,
-    );
-    await expect(page.locator("#project-title")).toHaveText("cam-top.pkg.slp");
-
-    archive.assets.push({ asset_id: "p1", path: predictions, size: 64 });
-    await page.locator("#predictions-retry").click();
-    await expect(page.locator("#project-location")).toHaveText(`Dandiset 000123 · ${predictions}`);
-    await expect(role(page, "file-type")).toHaveText("slp");
-    await expect(role(page, "file-probe")).toHaveText("Read the first 12 bytes with a ranged request: HDF5 signature.");
-    await expect(page.locator("#predictions-retry")).toBeHidden();
-    expect(downloads).toContain("p1");
-
-    await role(page, "edit").click();
-    await role(page, "save").click();
-    const labels = `${folder}/sub-01_ses-02_desc-labelsCamTop_pose.slp`;
-    await expect(page.locator("#host-status")).toHaveText(`Saved to the draft of dandiset 000123: ${labels}`);
-    expect(archive.created[0]).toMatchObject({ method: "POST", path: labels });
-    expect(archive.created.map((c) => c.path)).not.toContain(predictions);
-    expect(archive.created.map((c) => c.path)).not.toContain(`${folder}/sub-01_ses-02_desc-labelsCamTop_pose.pkg.slp`);
-  });
-
   for (const [choice, button, landed] of [
     ["cancel", "#overwrite-cancel", null],
     ["keep both", "#overwrite-keep", ["POST", "sub-01_ses-02_desc-labels2_pose.slp"]],
@@ -327,69 +276,6 @@ test.describe("EMBER storage", () => {
     const target = "derivatives/sleap/sub-01/ses-day1/beh/sub-01_ses-day1_desc-labels_pose.slp";
     await expect(page.locator("#host-status")).toContainText(target);
     expect(archive.created[0].path).toBe(target);
-  });
-
-  test("keeps unsaved edits sent to training as a package beside the project, and names its asset", async ({
-    page,
-  }) => {
-    const now = new Date();
-    await page.clock.setFixedTime(now);
-    const archive = await routeArchive(page, [{ asset_id: "a1", path: "sub-01/ses-02/labels.slp", size: 64 }]);
-    await openProject(page, "sub-01/ses-02/labels.slp");
-    await role(page, "edit").click();
-    await role(page, "train").click();
-
-    const name = `sub-01_ses-02_desc-trainingset${now.toISOString().replace(/\D/g, "").slice(0, 14)}_pose.pkg.slp`;
-    const target = `derivatives/sleap/sub-01/ses-02/beh/${name}`;
-    await expect(page.locator("#host-status")).toHaveText(
-      `Saved the training labels to the draft of dandiset 000123: ${target}`,
-    );
-    expect(archive.created[0]).toEqual({ method: "POST", path: target, blob_id: "blob-u1" });
-    expect([...archive.uploads.values()][0].equals(PROJECT_BYTES)).toBe(true);
-    await expect(role(page, "job-log")).toContainText(`Input: ${name} (pkg.slp)`);
-    await expect(role(page, "job-log")).toContainText(
-      `from EMBER dandiset 000123: ${target}, asset new-1 (${API}/assets/new-1/download/)`,
-    );
-    // The package is a snapshot for this run: the project's own edits are still unsaved.
-    await expect(role(page, "dirty")).toBeVisible();
-  });
-
-  test("names a training package a second on when another run already took its name", async ({ page }) => {
-    const now = new Date("2026-11-22T15:30:00Z");
-    await page.clock.setFixedTime(now);
-    const folder = "derivatives/sleap/sub-01/ses-02/beh";
-    const archive = await routeArchive(page, [
-      { asset_id: "a1", path: "sub-01/ses-02/labels.slp", size: 64 },
-      { asset_id: "p1", path: `${folder}/sub-01_ses-02_desc-trainingset20261122153000_pose.pkg.slp`, size: 64 },
-    ]);
-    await openProject(page, "sub-01/ses-02/labels.slp");
-    await role(page, "edit").click();
-    await role(page, "train").click();
-
-    const target = `${folder}/sub-01_ses-02_desc-trainingset20261122153001_pose.pkg.slp`;
-    await expect(page.locator("#host-status")).toHaveText(
-      `Saved the training labels to the draft of dandiset 000123: ${target}`,
-    );
-    expect(archive.created[0]).toMatchObject({ method: "POST", path: target });
-  });
-
-  test("trains on what a save wrote rather than the link the project was opened under", async ({ page }) => {
-    await routeArchive(page, [{ asset_id: "a1", path: "sub-01/ses-02/labels.slp", size: 64 }]);
-    await openProject(page, "sub-01/ses-02/labels.slp");
-    await role(page, "edit").click();
-    await role(page, "save").click();
-    const target = "derivatives/sleap/sub-01/ses-02/beh/sub-01_ses-02_desc-labels_pose.slp";
-    await expect(page.locator("#host-status")).toHaveText(`Saved to the draft of dandiset 000123: ${target}`);
-
-    await role(page, "train").click();
-    const log = role(page, "job-log");
-    await expect(log).toContainText("Input: sub-01_ses-02_desc-labels_pose.slp (slp)");
-    await expect(log).toContainText(
-      `from EMBER dandiset 000123: ${target}, asset new-1 (${API}/assets/new-1/download/)`,
-    );
-    await expect(role(page, "job-state")).toHaveText("completed", { timeout: 15_000 });
-    await expect(log).toContainText(`"labels_path":"${API}/assets/new-1/download/"`);
-    await expect(log).not.toContainText("Input: labels.slp");
   });
 
   test("finds a project's video in the dandiset by the path the project stored", async ({ page }) => {

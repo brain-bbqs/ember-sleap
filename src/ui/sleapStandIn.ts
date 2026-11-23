@@ -1,60 +1,37 @@
-// A stand-in for `mountSleapApp` from `@talmolab/sleap-app`, which is not published yet. It does
-// none of SLEAP's labeling work; it holds the app's place in the page, laid out like the SLEAP web
-// app (menu bar, start screen, canvas, side panels, status bar), and drives every host callback the
-// way the contract (src/lib/sleapContract.ts) says the real app will: New Project… and Open
-// Project… go to `host.chooseProject`, it reads an opened file over ranged requests by its declared
-// type, saves through `host.save` (after `host.refreshUrl` when the open link has expired; a new
-// project is first written as an `.slp` of its own), finds videos through `host.resolveVideo`,
-// lists models and submits, follows and cancels jobs through the host (training on unsaved edits
-// sends them inline, as upstream's "labels from this window" does), and keeps its keyboard shortcut
-// and page side effects inside the box it was mounted in. When the real package ships,
-// src/ui/sleapComponent.ts mounts that instead and this file goes.
+// A stand-in for `mountSleapApp` from `@talmolab/sleap-app`, mounted by the unit tests (which jsdom
+// cannot run the real app in) and the `?test` mocks. It does none of SLEAP's labeling work; it
+// holds the app's place in the page, laid out like the SLEAP web app (menu bar, start screen,
+// canvas, side panels, status bar), and drives every host callback the way the contract
+// (src/lib/sleapContract.ts) says the real app does: New Project… and Open Project… go to
+// `host.chooseProject`, it reads an opened file over ranged requests by its declared type, saves
+// through `host.save` (after `host.refreshUrl` when the open link has expired; a new project is
+// first written as an `.slp` of its own), finds videos through `host.resolveVideo`, and keeps its
+// keyboard shortcut and page side effects inside the box it was mounted in.
 import { button, h } from "@brain-bbqs/ui";
 import { humanSize } from "@brain-bbqs/utils";
 import sleapLogo from "../assets/sleap-logo.png";
-import { blobToBase64 } from "../lib/base64";
 import { newProjectFile } from "../lib/newProjectFile";
 import type {
   HostRef,
-  JobEvent,
-  ModelCard,
   MountOptions,
   NewProjectRequest,
   OpenRequest,
   ProjectIntent,
   ProjectVideo,
   SleapAppHandle,
-  TrackJobSpec,
-  TrainJobSpec,
 } from "../lib/sleapContract";
 
 export const STAND_IN_VERSION = "0.0.0-stand-in";
 
 const STAND_IN_NOTE =
-  "SLEAP component stand-in. It holds the place of @talmolab/sleap-app until that is published, and drives the same host callbacks.";
-const HOST_BACKEND = "host";
-const BUILT_IN_BACKENDS = [
-  ["local", "Local"],
-  ["connect", "SLEAP Connect"],
-] as const;
+  "SLEAP component stand-in. It holds the place of @talmolab/sleap-app in tests, and drives the same host callbacks.";
 const SIGNATURE_BYTES = 12;
-// The minimum a sleap-nn training config needs to name what it trains; the real app's training
-// dialog builds the full one.
-const STAND_IN_CONFIG = "model_config:\n  head_configs:\n    single_instance: {}\ntrainer_config:\n  max_epochs: 3\n";
-const STAND_IN_TRAINING: TrainJobSpec = {
-  type: "train",
-  config_contents: [STAND_IN_CONFIG],
-  model_types: ["single_instance"],
-  max_epochs: 3,
-  run_name: "stand-in",
-};
 
 // Feather-style outlines (24-unit grid), stroked with currentColor so they follow the text color.
 const ICONS = {
   plus: ["M12 5v14", "M5 12h14"],
   folder: ["M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"],
   film: ["M4 4h16v16H4z", "M8 4v16", "M16 4v16", "M4 9h4", "M4 15h4", "M16 9h4", "M16 15h4"],
-  zap: ["M13 2 4 14h7l-1 8 9-12h-7z"],
   pencil: ["M12 20h9", "M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"],
   save: ["M5 3h11l5 5v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z", "M7 3v5h8", "M7 21v-7h10v7"],
 } as const;
@@ -132,28 +109,6 @@ function roleButton(name: string, cls: string | null, label: string, glyph?: Ico
   return btn;
 }
 
-/** A field of an event's data as text; anything structured is shown as JSON. */
-function field(value: unknown): string {
-  if (value === undefined) return "";
-  return typeof value === "string" || typeof value === "number" ? String(value) : JSON.stringify(value);
-}
-
-function describeEvent(event: JobEvent): string | null {
-  const d = event.data;
-  switch (event.topic) {
-    case "job.log":
-      return typeof d.line === "string" ? d.line : "";
-    case "job.epoch":
-      return `epoch ${field(d.epoch)}: train loss ${field(d.train_loss)}, val loss ${field(d.val_loss)}`;
-    case "job.result":
-      return `result: ${JSON.stringify(d)}`;
-    case "job.status":
-      return d.detail ? `${field(d.state)}: ${field(d.detail)}` : null;
-    default:
-      return null;
-  }
-}
-
 interface MenuItem {
   role: string;
   label: string;
@@ -162,14 +117,11 @@ interface MenuItem {
 }
 
 export function mountStandIn(el: HTMLElement, options: MountOptions): SleapAppHandle {
-  const { host = {}, pageEffects = {}, compute } = options;
+  const { host = {}, pageEffects = {} } = options;
   let file: OpenRequest | null = null;
   // The project started with `create`, until another opens: it has videos but no file of its own yet.
   let started: NewProjectRequest | null = null;
-  let shownVideo: ProjectVideo | null = null;
   let dirty = false;
-  let stopJob: (() => void) | null = null;
-  let jobId: string | null = null;
   // Bumped by every open() and create(), so work that outlives the project it started for leaves
   // the next one alone.
   let opened = 0;
@@ -298,40 +250,11 @@ export function mountStandIn(el: HTMLElement, options: MountOptions): SleapAppHa
   videoSection.append(videoLabel, videoFind, videoResult);
   videosPanel.append(videoList, videoSection);
 
-  const computePanel = panel("compute-panel", "Train and predict");
-  const backend = role("select", "backend");
-  if (compute?.builtIn !== false) {
-    for (const [value, label] of BUILT_IN_BACKENDS) backend.append(new Option(label, value));
-  }
-  if (host.submitJob) backend.append(new Option("EMBER compute (host)", HOST_BACKEND, true, true));
-  const backendLabel = h("label", "sl-field", "Run on");
-  backendLabel.append(backend);
-  const trainBtn = roleButton("train", "sl-button", "Train a model", "zap");
-  const modelsBtn = roleButton("list-models", "sl-button", "Find models to predict with");
-  const computeActions = h("div", "sl-panel-body");
-  computeActions.append(backendLabel, trainBtn, modelsBtn);
-  const computeStatus = role("p", "compute-status", "sl-hint");
-  const models = role("ul", "models", "sl-models");
-
-  const jobState = role("span", "job-state", "sl-badge");
-  const jobLabel = role("span", "job-id", "sl-job-id");
-  const cancelBtn = roleButton("job-cancel", "sl-button", "Cancel job");
-  const jobRow = h("div", "sl-row");
-  jobRow.append(jobLabel, jobState, cancelBtn);
-  const jobLog = role("pre", "job-log", "sl-job-log");
-  const jobPane = role("div", "job", "sl-panel-body");
-  jobPane.append(jobRow, jobLog);
-  jobPane.hidden = true;
-  computePanel.append(computeActions, computeStatus, models, jobPane);
-
   // The icon rail down the right edge, as in the SLEAP app: each brings its panel into view by
   // focusing its first control, which the browser scrolls to.
   const rail = h("nav", "sl-rail");
   rail.setAttribute("aria-label", "Panels");
-  for (const [target, label, glyph] of [
-    [videosPanel, "Videos", "film"],
-    [computePanel, "Train and predict", "zap"],
-  ] as const) {
+  for (const [target, label, glyph] of [[videosPanel, "Videos", "film"]] as const) {
     const go = h("button", "sl-rail-button");
     go.type = "button";
     go.title = label;
@@ -355,9 +278,7 @@ export function mountStandIn(el: HTMLElement, options: MountOptions): SleapAppHa
   const saveStatus = role("span", "save-status", "sl-save-status");
   const statusLeft = h("div", "sl-status-left");
   statusLeft.append(fileName, fileType, dirtyBadge, saveStatus);
-  const statusRight = h("div", "sl-status-right");
-  statusRight.append(h("span", "sl-chip", host.submitJob ? "EMBER compute" : "Browser"));
-  statusbar.append(statusLeft, statusRight);
+  statusbar.append(statusLeft);
 
   root.append(menubar, body, statusbar);
   el.append(root);
@@ -401,7 +322,6 @@ export function mountStandIn(el: HTMLElement, options: MountOptions): SleapAppHa
   }
 
   function showVideo(video: ProjectVideo | null): void {
-    shownVideo = video;
     player.hidden = !video;
     if (video) player.src = video.url;
     else player.removeAttribute("src");
@@ -477,99 +397,10 @@ export function mountStandIn(el: HTMLElement, options: MountOptions): SleapAppHa
     saving = saving.then(() => save(pressed, generation));
   }
 
-  function hostCompute(): boolean {
-    if (backend.value === HOST_BACKEND && host.submitJob) return true;
-    say(computeStatus, "The stand-in runs jobs only through the page's own compute.", "err");
-    return false;
-  }
-
-  function followJob(id: string): void {
-    stopJob?.();
-    jobId = id;
-    jobLabel.textContent = `Job ${id}`;
-    jobLog.textContent = "";
-    say(jobState, "submitted");
-    cancelBtn.hidden = false;
-    jobPane.hidden = false;
-    stopJob =
-      host.subscribeJob?.(id, (event) => {
-        if (event.topic === "job.status") {
-          const state = String(event.data.state);
-          say(jobState, state, state === "completed" ? "ok" : state === "failed" ? "err" : undefined);
-          cancelBtn.hidden = ["completed", "failed", "canceled"].includes(state);
-        }
-        const line = describeEvent(event);
-        if (line !== null) jobLog.textContent += `${line}\n`;
-      }) ?? null;
-  }
-
-  /** Submits the spec `build` makes for the project open now, saying why if either step fails. */
-  async function submit(build: () => Promise<TrainJobSpec | TrackJobSpec>): Promise<void> {
-    say(computeStatus, "Submitting…");
-    const ref = currentRef();
-    try {
-      const { jobId: id } = await host.submitJob!(await build(), ref);
-      say(computeStatus, "");
-      followJob(id);
-    } catch (e) {
-      say(computeStatus, `Could not submit: ${e instanceof Error ? e.message : String(e)}`, "err");
-    }
-  }
-
-  /** What inference runs on: the opened file, or the video a new project shows. */
-  function inferenceTarget(): string | null {
-    return file?.url ?? shownVideo?.url ?? null;
-  }
-
-  function renderModel(card: ModelCard): HTMLLIElement {
-    const item = h("li");
-    const facts = [card.heads.join(", "), card.species, card.license, card.sourceLabel].filter(Boolean).join(" · ");
-    const predict = button("sl-button", "Predict");
-    predict.dataset.role = "predict";
-    // The project open now, by its current link: another may have opened, or the link renewed, since.
-    predict.addEventListener("click", () => {
-      const target = inferenceTarget();
-      if (!target || !hostCompute()) return;
-      const spec: TrackJobSpec = { type: "track", data_path: target, model_paths: [card.id] };
-      void submit(() => Promise.resolve(spec));
-    });
-    item.append(h("strong", null, card.name), h("span", "sl-hint", ` ${facts} `), predict);
-    return item;
-  }
-
-  function train(): void {
-    const project = file ?? started;
-    if (!project || !hostCompute()) return;
-    const [generation, edited] = [opened, dirty];
-    void submit(async () => {
-      if ("url" in project && !edited) return { ...STAND_IN_TRAINING, labels_path: project.url };
-      // The bytes a save would send, made the way a save makes them.
-      const labels = await projectBytes(project, generation);
-      return { ...STAND_IN_TRAINING, labels_content: await blobToBase64(labels) };
-    });
-  }
-
-  function listModels(): void {
-    if ((!file && !started) || !host.listModels) return;
-    say(computeStatus, "Listing models…");
-    models.replaceChildren();
-    host.listModels({}).then(
-      (cards) => {
-        say(computeStatus, cards.length ? "" : "No models found.");
-        models.append(...cards.map(renderModel));
-      },
-      (e: unknown) => say(computeStatus, `Could not list models: ${e instanceof Error ? e.message : String(e)}`, "err"),
-    );
-  }
-
   menu("File", [
     { role: "menu-new", label: "New Project…", run: () => chooseProject("new") },
     { role: "menu-open", label: "Open Project…", run: () => chooseProject("open") },
     { role: "menu-save", label: "Save", shortcut: "Ctrl+S", run: requestSave },
-  ]);
-  menu("Predict", [
-    { role: "menu-train", label: "Train a model", run: train },
-    { role: "menu-models", label: "Find models to predict with", run: listModels },
   ]);
 
   startNew.addEventListener("click", () => chooseProject("new"));
@@ -594,11 +425,6 @@ export function mountStandIn(el: HTMLElement, options: MountOptions): SleapAppHa
           : say(videoResult, "No match.", "err"),
       (e: unknown) => say(videoResult, `Lookup failed: ${e instanceof Error ? e.message : String(e)}`, "err"),
     );
-  });
-  trainBtn.addEventListener("click", train);
-  modelsBtn.addEventListener("click", listModels);
-  cancelBtn.addEventListener("click", () => {
-    if (jobId) void host.cancelJob?.(jobId);
   });
 
   return {
@@ -641,7 +467,6 @@ export function mountStandIn(el: HTMLElement, options: MountOptions): SleapAppHa
     },
     isDirty: () => dirty,
     unmount() {
-      stopJob?.();
       window.removeEventListener("beforeunload", beforeUnload);
       document.removeEventListener("pointerdown", outside);
       root.remove();

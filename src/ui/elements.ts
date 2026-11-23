@@ -48,12 +48,6 @@ export function getElements() {
     openStatus: required<HTMLParagraphElement>("open-status"),
     projectList: required<HTMLUListElement>("project-list"),
     newProjectBtn: required<HTMLButtonElement>("new-project-btn"),
-    predictions: {
-      section: required<HTMLDivElement>("predictions"),
-      list: required<HTMLUListElement>("predictions-list"),
-      status: required<HTMLParagraphElement>("predictions-status"),
-      retry: required<HTMLButtonElement>("predictions-retry"),
-    },
     entities: {
       dialog: required<HTMLDialogElement>("entities-dialog"),
       form: required<HTMLFormElement>("entities-form"),

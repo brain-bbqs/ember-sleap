@@ -9,12 +9,8 @@ import {
   labelsPathPrefix,
   labelsSavePath,
   numberedLabelsPath,
-  packageClock,
-  trainingPackagePath,
-  trainingPackagePrefix,
   type BidsEntities,
 } from "./bidsDerivatives";
-import type { ArchiveRef } from "./computeClient";
 import {
   closestAsset,
   downloadUrl,
@@ -27,11 +23,11 @@ import {
 } from "./emberAssets";
 import { putAsset, type SaveStage } from "./emberUpload";
 import type { EtagHasher } from "./etagPool";
-import { baseName, fileTypeOfPath, isProjectType, projectTypeOf } from "./fileType";
+import { baseName, fileTypeOfPath, isProjectType } from "./fileType";
 import { fromHostRef, toHostRef, type EmberLocation } from "./hostRef";
 import type { FileType, HostRef, NewProjectRequest, OpenRequest, ProjectVideo, ResolvedFile } from "./sleapContract";
 
-/** What a save wrote: the ref the app keeps for it, and the file, by a link this storage can renew and describe. */
+/** What a save wrote: the ref the app keeps for it, and the file, by a link this storage can renew. */
 export interface SavedFile {
   ref: HostRef;
   file: ResolvedFile;
@@ -40,33 +36,16 @@ export interface SavedFile {
 /** The storage half of the host contract, which a fake can stand in for (see memoryStorage.ts). */
 export interface ProjectStorage {
   save(file: Blob, name: string, ref?: HostRef): Promise<SavedFile>;
-  /**
-   * Keeps labels a training job was sent inline as a package of their own beside the project, under
-   * the rules a save of the project follows (see bidsDerivatives.ts for where it goes).
-   */
-  saveTrainingPackage(file: Blob, ref?: HostRef): Promise<SavedFile>;
   resolveVideo(storedPath: string, project?: HostRef): Promise<ResolvedFile | null>;
   refreshUrl(file: ResolvedFile): Promise<ResolvedFile>;
-  /** The EMBER asset behind a link this storage handed out, or null for any other link. */
-  describe(url: string): ArchiveRef | null;
 }
 
-/** Opening a project by where it sits rather than from a listing, as the predictions a job wrote are opened. */
-export interface PathOpener {
-  /**
-   * The project at `path` in the dandiset's draft, resolved to what the app's `open` takes. Rejects
-   * with {@link notOnEmberYet}'s message when no asset is at `path` (a worker may still be writing
-   * it), and when `path` names no SLEAP project.
-   */
-  openPath(dandisetId: string, path: string): Promise<OpenRequest>;
-}
-
-export interface EmberStorage extends ProjectStorage, PathOpener {
+export interface EmberStorage extends ProjectStorage {
   /** A listed project, resolved to what the app's `open` takes. */
   open(dandisetId: string, project: ProjectAsset): Promise<OpenRequest>;
   /**
    * A new project on listed videos, as the app's `create` takes it: each video by a link this
-   * storage can renew and describe, recorded by its path in the dandiset. The project belongs where
+   * storage can renew, recorded by its path in the dandiset. The project belongs where
    * its first video is, so its first save lands in that video's subject (and session) folder.
    */
   startProject(dandisetId: string, videos: ProjectAsset[]): Promise<NewProjectRequest>;
@@ -78,11 +57,6 @@ export const NEW_PROJECT_NAME = "Untitled.slp";
 /** How many video links a new project resolves at once. */
 const VIDEO_LINKS_AT_ONCE = 4;
 
-/** Why a file a job reported does not open: nothing is at its path, which a worker may still be writing. */
-export function notOnEmberYet(path: string): string {
-  return `${path} is not on EMBER yet: the job may still be writing it. Try again in a moment.`;
-}
-
 /** What to do when a save's labels file is already there: go over it, save beside it, or stop. */
 export type OverwriteChoice = "replace" | "keep-both" | "cancel";
 
@@ -92,7 +66,7 @@ export interface EmberStorageOptions {
   /**
    * Asks the person for a subject (and session) when a source path names none, or names one that
    * is not a BIDS label; null cancels. Asked once per source: the answer stands for the page's later
-   * saves and training packages from it, so they all land in one subject's folder.
+   * saves from it, so they all land in one subject's folder.
    */
   askEntities: (sourcePath: string) => Promise<BidsEntities | null>;
   /**
@@ -109,12 +83,17 @@ export interface EmberStorageOptions {
   hash?: EtagHasher;
   /** Hears about a non-fatal problem, such as the derivative dataset's scaffolding failing to write. */
   onWarning?: (message: string) => void;
-  /** The time a training package is named after (see packageClock in bidsDerivatives.ts). */
-  now?: () => Date;
   fetch?: typeof fetch;
 }
 
 type Located = Pick<ArchiveAsset, "asset_id" | "path">;
+
+/** The EMBER asset a link was handed out for. */
+interface LinkedAsset {
+  dandisetId: string;
+  assetId: string;
+  path: string;
+}
 
 /** A message as a sentence, so warnings read one after another. */
 function sentence(text: string): string {
@@ -131,21 +110,18 @@ export function createEmberStorage(options: EmberStorageOptions): EmberStorage {
     onProgress,
     hash,
     onWarning = console.warn,
-    now = () => new Date(),
     fetch,
   } = options;
-  // Which asset each URL handed to the app came from, so an expired presigned link can be renewed
-  // and a job can name the asset. A renewed link's old URL stays known, since a caller holding it
-  // may ask again later.
-  const located = new Map<string, ArchiveRef>();
+  // Which asset each URL handed to the app came from, so an expired presigned link can be renewed.
+  // A renewed link's old URL stays known, since a caller holding it may ask again later.
+  const located = new Map<string, LinkedAsset>();
   // Saves run one at a time, so a save's check for an existing labels file sees the one before it.
   let saving: Promise<unknown> = Promise.resolve();
-  const packageTime = packageClock(now);
   // The subject and session the person gave for each source, by its ref's key.
   const answered = new Map<string, BidsEntities>();
 
   function locate(cfg: ArchiveConfig, { asset_id, path }: Located, url: string): string {
-    located.set(url, { dandisetId: cfg.dandisetId, assetId: asset_id, path, downloadUrl: downloadUrl(cfg, asset_id) });
+    located.set(url, { dandisetId: cfg.dandisetId, assetId: asset_id, path });
     return url;
   }
 
@@ -153,7 +129,7 @@ export function createEmberStorage(options: EmberStorageOptions): EmberStorage {
     return locate(cfg, asset, await resolveDownloadUrl(cfg, asset.asset_id, fetch));
   }
 
-  /** A project asset as the app's `open` takes it, by a link this storage can renew and describe. */
+  /** A project asset as the app's `open` takes it, by a link this storage can renew. */
   async function opened(
     cfg: ArchiveConfig,
     dandisetId: string,
@@ -220,12 +196,12 @@ export function createEmberStorage(options: EmberStorageOptions): EmberStorage {
     return entities;
   }
 
-  /** Uploads `file` to `target`, then hands it back by a fresh link a job can name. */
+  /** Uploads `file` to `target`, then hands it back by a fresh link. */
   async function write(cfg: ArchiveConfig, target: string, file: Blob): Promise<SavedFile> {
     const asset = await putAsset(cfg, target, file, { onProgress, hash });
     await ensureScaffold(cfg);
     // The bytes are saved by now, so a link that cannot be had does not fail the save: the asset's
-    // own download endpoint names it as well, and a worker resolves that itself.
+    // own download endpoint names it as well.
     const url = await resolve(cfg, asset).catch(() => locate(cfg, asset, downloadUrl(cfg, asset.asset_id)));
     return {
       ref: toHostRef({ dandisetId: cfg.dandisetId, path: target }),
@@ -245,20 +221,6 @@ export function createEmberStorage(options: EmberStorageOptions): EmberStorage {
         if (choice === "keep-both") target = await besideTarget(cfg, target);
       }
     }
-    return write(cfg, target, file);
-  }
-
-  async function saveTrainingPackageNow(file: Blob, ref?: HostRef): Promise<SavedFile> {
-    const { source, cfg } = await saveSource(ref);
-    const entities = await entitiesOf(source);
-    // Another page, or this one before a reload, may have named a package for the same second: each
-    // run keeps a snapshot of its own, so a name already taken moves on rather than going over it.
-    const prefix = trainingPackagePrefix(source.path, entities);
-    const taken = new Set((await findAssetsByPrefix(cfg, prefix)).map((a) => a.path));
-    let target: string;
-    do {
-      target = trainingPackagePath(source.path, entities, packageTime());
-    } while (taken.has(target));
     return write(cfg, target, file);
   }
 
@@ -294,17 +256,7 @@ export function createEmberStorage(options: EmberStorageOptions): EmberStorage {
       };
     },
 
-    async openPath(dandisetId, path) {
-      const fileType = projectTypeOf(path);
-      const cfg = await config(dandisetId);
-      const asset = await findAssetByPath(cfg, path);
-      if (!asset) throw new Error(notOnEmberYet(path));
-      return opened(cfg, dandisetId, asset, fileType);
-    },
-
     save: (file, name, ref) => queued(() => saveNow(file, name, ref)),
-
-    saveTrainingPackage: (file, ref) => queued(() => saveTrainingPackageNow(file, ref)),
 
     async resolveVideo(storedPath, project) {
       const source = fromHostRef(project);
@@ -325,7 +277,5 @@ export function createEmberStorage(options: EmberStorageOptions): EmberStorage {
       const url = await resolve(cfg, { asset_id: where.assetId, path: where.path });
       return { ...file, url };
     },
-
-    describe: (url) => located.get(url) ?? null,
   };
 }

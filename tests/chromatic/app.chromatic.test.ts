@@ -47,24 +47,3 @@ forEachViewport(test, "Main page - project open", async ({ page }) => {
   await expect(page.locator("#open-dialog")).toBeHidden();
   await expectNoHorizontalOverflow(page);
 });
-
-// The listed path is where inference on the mock project writes, so it is fixed too.
-const MOCK_PREDICTIONS = "derivatives/sleap/sub-mock/beh/sub-mock_desc-predictionsTestInjectionMockProject_pose.slp";
-
-forEachViewport(test, "Main page - predictions listed", async ({ page }) => {
-  await page.goto("/?test&mock_project&mock_predictions");
-  await expect(page.locator('[data-role="file-probe"]')).toContainText("HDF5 signature");
-  await expect(page.locator("#predictions-list button")).toHaveText([MOCK_PREDICTIONS]);
-  await expectNoHorizontalOverflow(page);
-});
-
-forEachViewport(test, "Main page - predictions not on EMBER yet", async ({ page }) => {
-  await page.goto("/?test&mock_project&mock_predictions&mock_predictions_missing");
-  await expect(page.locator('[data-role="file-probe"]')).toContainText("HDF5 signature");
-  await page.locator("#predictions-list button").click();
-  await expect(page.locator("#predictions-status")).toHaveText(
-    `${MOCK_PREDICTIONS} is not on EMBER yet: the job may still be writing it. Try again in a moment.`,
-  );
-  await expect(page.locator("#predictions-retry")).toBeVisible();
-  await expectNoHorizontalOverflow(page);
-});

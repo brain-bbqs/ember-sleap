@@ -1,11 +1,9 @@
 // @vitest-environment jsdom
-// The page as it will run once its outside pieces exist: an OAuth app registered on EMBER (this
-// boot is the redirect back from sign-in), the compute proxy's URL and the model index's URL set.
-// The three are switched on by mocking the modules that hold them; storage is a recording fake, so
-// this file is about main.ts's wiring, not the archive calls (main.ember.test.ts has those).
+// The page coming back from EMBER's sign-in: this boot is the OAuth redirect, with a token that
+// needs refreshing. OAuth is a fake, and storage a recording one, so this file is about main.ts's
+// wiring, not the archive calls (main.ember.test.ts has those).
 import { jsonResponse, routeFetch, type FetchRouter } from "@brain-bbqs/test-utils/vitest";
 import { beforeAll, describe, expect, it, vi } from "vitest";
-import type { JobRequest } from "../../src/lib/computeClient";
 import type { EmberStorageOptions } from "../../src/lib/emberStorage";
 import { STORAGE_KEY } from "../../src/lib/settings";
 import { STAND_IN_VERSION } from "../../src/ui/sleapStandIn";
@@ -21,35 +19,17 @@ const fakes = vi.hoisted(() => {
     revokeToken: vi.fn(() => Promise.resolve()),
   };
   const warning = "Could not write derivatives/sleap/.bidsignore: HTTP 400.";
-  const asset = (assetId: string, path: string) => ({
+  const path = "derivatives/sleap/sub-01/beh/sub-01_desc-labels_pose.slp";
+  const saved = {
     ref: { key: `ember:000123:${path}` },
-    file: { url: `https://s3.example/${assetId}`, fileType: "slp" as const, name: path.split("/").pop()! },
-    archive: { dandisetId: "000123", assetId, path, downloadUrl: `https://api.example/assets/${assetId}/download/` },
-  });
-  const saved = asset("s1", "derivatives/sleap/sub-01/beh/sub-01_desc-labels_pose.slp");
-  const trainingSet = asset("t1", "derivatives/sleap/sub-01/beh/sub-01_desc-trainingset20261122153000_pose.pkg.slp");
-  return {
-    signedIn,
-    refreshed,
-    oauth,
-    warning,
-    saved,
-    trainingSet,
-    storageOptions: null as EmberStorageOptions | null,
+    file: { url: "https://s3.example/s1", fileType: "slp" as const, name: path.split("/").pop()! },
   };
+  return { signedIn, refreshed, oauth, warning, saved, storageOptions: null as EmberStorageOptions | null };
 });
 
 vi.mock("../../src/lib/oauth", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../src/lib/oauth")>()),
   createOAuth: () => fakes.oauth,
-}));
-vi.mock("../../src/lib/computeClient", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../../src/lib/computeClient")>()),
-  COMPUTE_PROXY_URL: "https://proxy.example/v1",
-}));
-vi.mock("../../src/lib/modelIndex", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../../src/lib/modelIndex")>()),
-  MODEL_INDEX_URL: "https://index.example/models.json",
 }));
 vi.mock("../../src/lib/emberStorage", () => ({
   createEmberStorage: (options: EmberStorageOptions) => {
@@ -73,10 +53,8 @@ vi.mock("../../src/lib/emberStorage", () => ({
         if (++saves === 1) options.onWarning?.(fakes.warning);
         return Promise.resolve(fakes.saved);
       },
-      saveTrainingPackage: () => Promise.resolve(fakes.trainingSet),
       resolveVideo: () => Promise.resolve(null),
       refreshUrl: (file: unknown) => Promise.resolve(file),
-      describe: (url: string) => [fakes.saved, fakes.trainingSet].find((a) => a.file.url === url)?.archive ?? null,
     };
   },
 }));
@@ -108,11 +86,6 @@ beforeAll(async () => {
     },
     { match: `${API}/dandisets/000123/versions/draft/`, respond: jsonResponse({ description: "Pilot." }) },
     { match: `${API}/dandisets/000123/`, respond: jsonResponse({ identifier: "000123" }) },
-    {
-      match: "https://proxy.example/v1/jobs/p1/events",
-      respond: jsonResponse({ events: [{ topic: "job.status", seq: 1, data: { state: "completed" } }] }),
-    },
-    { match: "https://proxy.example/v1/jobs", respond: jsonResponse({ job_id: "p1" }) },
   ]);
   fetchMock = Object.assign(
     (input: string | URL | Request, init?: RequestInit) =>
@@ -123,7 +96,7 @@ beforeAll(async () => {
   await vi.waitFor(() => expect(el("project-list").hidden).toBe(false));
 });
 
-describe("main.ts once sign-in, compute and the model index are configured", () => {
+describe("main.ts coming back from EMBER sign-in", () => {
   it("completes the sign-in redirect, refreshes the token once for every call at boot, and stores the fresh one", async () => {
     expect(fakes.oauth.handleRedirectCallback).toHaveBeenCalledTimes(1);
     expect(el("oauthSignedIn").hidden).toBe(false);
@@ -192,58 +165,9 @@ describe("main.ts once sign-in, compute and the model index are configured", () 
     expect(await asked).toBe(choice);
   });
 
-  it("lists models from every source, reporting the ones that fail", async () => {
-    role("list-models").click();
-    await vi.waitFor(() => expect(role("compute-status").textContent).toBe("No models found."));
-    const warned = vi.mocked(console.warn).mock.calls.map(([message]) => String(message));
-    expect(warned).toEqual(expect.arrayContaining([expect.stringContaining("Could not list models from")]));
-    expect(fetchMock.callsTo("https://index.example/models.json").length).toBe(1);
-    expect(fetchMock.callsTo("huggingface.co").length).toBe(1);
-    const emberModels = fetchMock.calls.filter((c) => decodeURIComponent(c.url).includes("derivatives/sleap/models/"));
-    expect(emberModels.length).toBe(1);
-    expect(new Headers(emberModels[0].init?.headers).get("Authorization")).toBe("Bearer fresh");
-  });
-
-  /** Every job submitted to the proxy, leaving out the polls for their events. */
-  const submits = () => fetchMock.calls.filter((c) => c.url === "https://proxy.example/v1/jobs");
-  const jobSent = (n: number) => JSON.parse(String(submits()[n].init?.body)) as JobRequest;
-
-  it("submits jobs to the proxy with the fresh token, naming what the project's save wrote and its EMBER asset", async () => {
-    role("train").click();
-    await vi.waitFor(() => expect(role("job-state").textContent).toBe("completed"));
-    expect(new Headers(submits()[0].init?.headers).get("Authorization")).toBe("Bearer fresh");
-    const { file, archive } = fakes.saved;
-    expect(jobSent(0).spec).toMatchObject({ type: "train", labels_path: file.url });
-    expect(jobSent(0).inputs).toEqual([{ ...file, archive }]);
-  });
-
-  it("keeps unsaved edits on EMBER as a training package, says where, and trains on that", async () => {
-    role("edit").click();
-    role("train").click();
-    await vi.waitFor(() => expect(submits().length).toBe(2));
-    const { ref, file, archive } = fakes.trainingSet;
-    expect(el("host-status").textContent).toBe(
-      `Saved the training labels to the draft of dandiset 000123: ${ref.key.replace("ember:000123:", "")}`,
-    );
-    expect(jobSent(1).spec).toMatchObject({ labels_path: file.url });
-    expect(jobSent(1).spec).not.toHaveProperty("labels_content");
-    expect(jobSent(1).inputs).toEqual([{ ...file, archive }]);
-    // The edits themselves are still unsaved until the project is.
-    expect(role("dirty").hidden).toBe(false);
-    role("save").click();
-    await vi.waitFor(() => expect(el("host-status").textContent).toBe(LANDED));
-  });
-
   it("revokes the token on sign-out", () => {
     el("oauthSignoutBtn").click();
     expect(fakes.oauth.revokeToken).toHaveBeenCalledWith(fakes.refreshed);
     expect(el("oauthSigninBtn").hidden).toBe(false);
-  });
-
-  it("submits jobs to the proxy with no token once signed out", async () => {
-    const before = submits().length;
-    role("train").click();
-    await vi.waitFor(() => expect(submits().length).toBeGreaterThan(before));
-    expect(new Headers(submits()[before].init?.headers).get("Authorization")).toBeNull();
   });
 });
