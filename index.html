@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>EMBER SLEAP</title>
+    <link rel="icon" type="image/png" href="/src/assets/sleap-logo.png" />
+  </head>
+  <body>
+    <a
+      class="brand-watermark-link"
+      href="https://brain-bbqs.org"
+      target="_blank"
+      rel="noopener"
+      aria-label="BBQS"
+      title="BBQS"
+    >
+      <img class="brand-watermark-logo" src="/src/assets/bbqs-logo.png" alt="BBQS" />
+    </a>
+
+    <main class="workspace">
+      <header class="site-header">
+        <a
+          class="header-logo-link plugin-logo"
+          href="https://sleap.ai"
+          target="_blank"
+          rel="noopener"
+          aria-label="SLEAP, an EMBER plugin"
+          title="SLEAP, an EMBER plugin"
+        >
+          <img class="header-logo" src="/src/assets/sleap-logo.png" alt="SLEAP" />
+          <img class="plugin-logo-badge" src="/src/assets/ember-badge.svg" alt="" />
+        </a>
+        <h1>EMBER SLEAP</h1>
+      </header>
+
+      <!-- Where the SLEAP app will mount, filling the window between the header and the footer. -->
+      <div class="sleap-root"></div>
+
+      <!-- The BBQS footer, without its What's New and issue links: the version stamp bottom-left,
+           the brand marks bottom-right. A row of the page's column rather than pinned over it, so
+           the app above ends where it begins. -->
+      <footer class="page-footer-bar">
+        <div class="footer-left">
+          <div class="footer-row">
+            <!-- Text is filled in from __APP_VERSION__ by src/main.ts. -->
+            <a
+              id="version-indicator"
+              class="version-link"
+              href="https://github.com/brain-bbqs/ember-sleap"
+              target="_blank"
+              rel="noopener"
+              title="View source on GitHub"
+            ></a>
+          </div>
+        </div>
+        <div class="footer-brands">
+          <!-- The Talmo Lab mark is a wordless flask, so its name is spelled out beneath it, as
+               clip-extractor and encoding-helper show it; this page is dark only, so it takes the
+               flask drawn for dark backgrounds. -->
+          <a
+            class="footer-brand-link captioned"
+            href="https://talmolab.org/"
+            target="_blank"
+            rel="noopener"
+            aria-label="Talmo Lab"
+            title="Talmo Lab"
+          >
+            <img class="footer-brand-logo" src="/src/assets/talmolab-logo-on-dark.svg" alt="" />
+            <span class="footer-brand-name">Talmo Lab</span>
+          </a>
+          <a
+            class="footer-brand-link"
+            href="https://centerforopenneuroscience.org"
+            target="_blank"
+            rel="noopener"
+            aria-label="Center for Open Neuroscience"
+            title="Center for Open Neuroscience"
+          >
+            <img class="footer-brand-logo" src="/src/assets/con-logo.png" alt="Center for Open Neuroscience" />
+          </a>
+        </div>
+      </footer>
+    </main>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
