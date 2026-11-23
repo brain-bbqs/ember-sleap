@@ -14,6 +14,7 @@ Draft, 2026-11-22. Supersedes the "extension registries" approach in the earlier
 - [Validation](#validation)
 - [PR series to upstream](#pr-series-to-upstream)
 - [ember-sleap work (this repository)](#ember-sleap-work-this-repository)
+  - [EMBER sign-in](#ember-sign-in)
   - [EMBER storage](#ember-storage)
   - [BIDS derivatives layout](#bids-derivatives-layout)
   - [Models](#models)
@@ -34,7 +35,7 @@ Rough effort: about 9 to 15 engineer-weeks for one developer. The end-to-end pro
 
 - **No hard fork.** Upstream asked us to import and contribute rather than fork. We consume a published npm package and send what we need upstream.
 - **A vendored component, not an iframe.** Upstream ships `mountSleapApp(el, options)` with React bundled inside, so our plain-DOM BBQS page does not need React.
-- **Sign-in lives in our page.** EMBER OAuth with PKCE via [`@brain-bbqs/ember-client`](https://github.com/brain-bbqs/bbqs-web-components/tree/main/packages/ember-client). The archive's own login is GitHub accounts. The SLEAP app never sees sign-in UI.
+- **Sign-in lives in our page.** EMBER OAuth with PKCE via [`@brain-bbqs/ember-client`](https://github.com/brain-bbqs/bbqs-web-components/tree/main/packages/ember-client), using ember-sleap's own OAuth app (see [EMBER sign-in](#ember-sign-in)). The archive's own login is GitHub accounts. The SLEAP app never sees sign-in UI.
 - **Pennsieve is the only compute.** Training and inference go through a central proxy to a Pennsieve service account, built by another team. Local and SLEAP Connect compute are switched off in our build.
 - **File URLs are extensionless blobs.** EMBER and proxy URLs are routed blob URLs with no file extension. The file type always travels alongside the URL.
 - **Hosting is GitHub Pages** under a `*.brain-bbqs.org` hostname, per the BBQS app convention (bbqs-uploader is `upload.brain-bbqs.org`). The exact name is still open, e.g. `sleap.brain-bbqs.org`.
@@ -221,6 +222,29 @@ Other repositories:
 
 ## ember-sleap work (this repository)
 
+### EMBER sign-in
+
+ember-sleap has its own public OAuth app on EMBER (PKCE, no client secret), separate from bbqs-uploader's so each tool can be revoked and audited on its own.
+
+| Setting | Value |
+| --- | --- |
+| Client ID | `cDxcl68boqpjgBoEXfh2bnuYxwWQLMdYfMnVrHNA` |
+| Authorize and token endpoints | `https://api-dandi.emberarchive.org/oauth/` (`EMBER_INSTANCE.oauth` in ember-client) |
+| PKCE storage key | `ember-sleap.oauth-pkce.v1` (our choice; follows bbqs-uploader's `bbqs-uploader.oauth-pkce.v1`) |
+
+The client ID is public, so it lives in the app's source like bbqs-uploader's:
+
+```ts
+import { createOAuthClient } from "@brain-bbqs/ember-client";
+
+export const oauth = createOAuthClient({
+  clientId: "cDxcl68boqpjgBoEXfh2bnuYxwWQLMdYfMnVrHNA",
+  storageKey: "ember-sleap.oauth-pkce.v1",
+});
+```
+
+Checked on 2026-11-23: EMBER's token endpoint knows this client ID as a public client. An exchange with a dummy code returns `invalid_grant`, while an unknown ID returns `invalid_client`. Not yet checked: which redirect URIs are registered. ember-client sends the URL the page is served from as the redirect URI by default, so every serving URL has to be registered before sign-in works from it.
+
 ### EMBER storage
 
 Verified live against `api-dandi.emberarchive.org` on 2026-11-21 and 2026-11-22:
@@ -300,7 +324,8 @@ M1 to M4 is the end-to-end prototype with stubbed compute (about 5 to 8 weeks). 
 ## Open questions
 
 - [ ] **Talmo Lab:** agree the component contract (mount options, host callbacks) and the PR order.
-- [ ] **EMBER admins:** register a public OAuth app for ember-sleap with every serving URL as a redirect URI, including PR previews.
+- [x] **EMBER admins:** register a public OAuth app for ember-sleap (client ID `cDxcl68boqpjgBoEXfh2bnuYxwWQLMdYfMnVrHNA`).
+- [ ] **EMBER admins:** confirm every serving URL is a registered redirect URI, including PR previews and local dev. Production depends on the final hostname.
 - [ ] **EMBER data team:** approve the `derivatives/sleap/` layout; confirm drafts holding `.slp` and `.ckpt` files can be published.
 - [ ] **Proxy team:** caller auth, job API, file-type metadata on input URLs, result locations, who finishes the SLEAP Pennsieve app.
 - [ ] **Us:** final hostname (e.g. `sleap.brain-bbqs.org`).
