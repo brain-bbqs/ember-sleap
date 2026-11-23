@@ -11,7 +11,7 @@ import {
 import type { ModelFile } from "./sleapContract";
 
 // Hugging Face Hub models tagged for sleap-nn. The browser reads only the Hub's listing; weights
-// go straight from the Hub to the compute container. Conventions: docs/MODEL_INDEX.md.
+// go straight from the Hub to the compute container.
 
 export interface HuggingFaceSourceOptions {
   fetch?: typeof fetch;
