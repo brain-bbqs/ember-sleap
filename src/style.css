@@ -85,6 +85,24 @@ main.workspace {
 }
 
 /* ------------------------------------------------------------------------------------------ */
+/* SLEAP's logo, badged as an EMBER plugin */
+/* ------------------------------------------------------------------------------------------ */
+
+/* The sibling apps badge EMBER's flame with their own icon; this plugin leads with SLEAP's logo
+   and puts EMBER's flame in the badge, overlapping its bottom-right corner. */
+.plugin-logo {
+  position: relative;
+}
+
+.plugin-logo-badge {
+  position: absolute;
+  right: -0.3rem;
+  bottom: -0.3rem;
+  width: 1.3rem;
+  height: 1.3rem;
+}
+
+/* ------------------------------------------------------------------------------------------ */
 /* The EMBER bar: where the open project lives, what the page last did with it, the way out */
 /* ------------------------------------------------------------------------------------------ */
 
