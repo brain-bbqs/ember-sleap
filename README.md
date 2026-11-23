@@ -32,7 +32,7 @@ Swapping in the real package is a change to one function, `loadSleapComponent` i
 | Model catalogue (Hugging Face, EMBER, central index)   | Sources written and unit-tested; the index dandiset does not exist yet                                                    |
 | Training and inference                                 | Run on an in-browser stub until the central Pennsieve proxy's job API exists ([docs/COMPUTE_API.md](docs/COMPUTE_API.md)) |
 
-Try it with [`?dandiset=000398`](https://sleap.brain-bbqs.org/?dandiset=000398) (a public SLEAP example) or offline with [`?test&mock_project`](https://sleap.brain-bbqs.org/?test&mock_project).
+Try it with [`?dandiset=000398`](https://brain-bbqs.github.io/ember-sleap/?dandiset=000398) (a public SLEAP example) or offline with [`?test&mock_project`](https://brain-bbqs.github.io/ember-sleap/?test&mock_project).
 
 ## Local development
 
