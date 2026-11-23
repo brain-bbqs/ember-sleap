@@ -1,0 +1,5 @@
+# Written by `apm install`, which writes it back in its own format on every install.
+apm.lock.yaml
+# Hand-aligned plan and proposal drafts: the proposal is pasted into an issue as written.
+docs/DEVELOPMENT_PLAN.md
+docs/UPSTREAM_PROPOSAL.md
