@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.0
+
+#### 🚀 Enhancement
+
+- Models from a curated central index join the model list, replacing the same models listed straight from Hugging Face or EMBER ([#13](https://github.com/brain-bbqs/ember-sleap/pull/13))
+
 ## 0.2.0
 
 #### 🚀 Enhancement
