@@ -529,24 +529,6 @@ describe("createSleapHost", () => {
     expect(compute.submit).toHaveBeenCalledTimes(2);
   });
 
-  it("still sends a model an index entry replaced in the list, named by its own id as a train result names it", async () => {
-    const location = { kind: "ember", dandisetId: "000398", path: "derivatives/sleap/models/m" } as const;
-    const trained: HostModelCard = { ...CARD, id: "ember:000398/m", source: location };
-    const curated: HostModelCard = {
-      ...CARD,
-      id: "index:m",
-      files: CARD.files.map((file) => ({ ...file, sha256: "a".repeat(64) })),
-      source: { kind: "index", target: location },
-    };
-    const { host, compute } = setup([trained, curated]);
-    host.remember({ ...VIDEO, ref: project });
-    await host.submitJob(track({ model_paths: [trained.id] }), project);
-    expect(compute.submit).toHaveBeenCalledWith(
-      expect.objectContaining({ models: [{ id: trained.id, files: trained.files }] }),
-    );
-    expect((await host.listModels({})).map((card) => card.id)).toEqual(["index:m"]);
-  });
-
   it("remembers nothing when no video is found", async () => {
     const { host, storage } = setup();
     storage.resolveVideo.mockResolvedValueOnce(null);

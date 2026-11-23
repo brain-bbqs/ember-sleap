@@ -30,7 +30,6 @@ import { createMemoryStorage } from "./lib/memoryStorage";
 import type { ModelSource } from "./lib/modelCatalogue";
 import { createEmberModelSource } from "./lib/modelEmber";
 import { createHuggingFaceSource } from "./lib/modelHuggingFace";
-import { createIndexSource, MODEL_INDEX_URL } from "./lib/modelIndex";
 import { createOAuth } from "./lib/oauth";
 import { settingsStore, STORAGE_KEY } from "./lib/settings";
 import {
@@ -281,16 +280,13 @@ function pageCompute(): { client: ComputeClient; trained: ModelSource[] } {
 
 function modelSources(trained: ModelSource[]): ModelSource[] {
   if (mocked) return [mockModelSource, ...trained];
-  const sources: ModelSource[] = [];
-  if (MODEL_INDEX_URL) sources.push(createIndexSource({ url: MODEL_INDEX_URL }));
-  sources.push(
+  return [
     createHuggingFaceSource({}),
     // Resolved per listing, so the models are read with the token saves use, and with none once signed
     // out. With nothing listed yet the config names no dandiset, which the source reads as nothing open.
     createEmberModelSource({ getConfig: () => configFor(listedDandisetId) }),
     ...trained,
-  );
-  return sources;
+  ];
 }
 
 const storage = pageStorage();

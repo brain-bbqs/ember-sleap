@@ -12,8 +12,6 @@ import {
   parseSkeleton,
   skeletonFit,
   type HostModelCard,
-  type ModelCardSource,
-  type ModelLocation,
   type ModelSource,
 } from "../../src/lib/modelCatalogue";
 import type { ModelFile } from "../../src/lib/sleapContract";
@@ -231,11 +229,9 @@ describe("matchesText", () => {
 
   it.each([
     [{ kind: "huggingface", repo: "talmolab/mice", revision: "abc" }, true],
-    [{ kind: "index", target: { kind: "huggingface", repo: "talmolab/mice", revision: "v1" } }, true],
-    [{ kind: "index", target: { kind: "ember", dandisetId: "000123", path: "talmolab/mice" } }, false],
     [{ kind: "ember", dandisetId: "000123", path: "talmolab/mice" }, false],
   ] as const)("matches the Hugging Face repository a card is kept in: %j -> %s", (source, expected) => {
-    expect(matchesText(card("index:mouse", { source }), "TALMOLAB/MICE")).toBe(expected);
+    expect(matchesText(card("hf:mouse", { source }), "TALMOLAB/MICE")).toBe(expected);
   });
 });
 
@@ -243,10 +239,6 @@ describe("describeSource", () => {
   it.each([
     [{ kind: "huggingface", repo: "lab/mouse", revision: "abc" }, "from Hugging Face lab/mouse"],
     [{ kind: "ember", dandisetId: "000123", path: "derivatives/sleap/models/m" }, "from EMBER dandiset 000123"],
-    [
-      { kind: "index", target: { kind: "ember", dandisetId: "000123", path: "derivatives/sleap/models/m" } },
-      "from the model index (EMBER dandiset 000123)",
-    ],
   ] as const)("%j -> %s", (source, expected) => {
     expect(describeSource(source)).toBe(expected);
   });
@@ -269,98 +261,28 @@ describe("skeletonFit", () => {
 
 describe("listModels", () => {
   it("merges sources in order, the first source keeping a shared id", async () => {
-    const index = source("Model index", [card("a", { name: "from index" }), card("b")]);
+    const archive = source("EMBER", [card("a", { name: "from EMBER" }), card("b")]);
     const hub = source("Hugging Face", [card("a", { name: "from hub" }), card("c")]);
-    const models = await listModels([index, hub], {});
-    expect(models.map((m) => `${m.id}:${m.name}`)).toEqual(["a:from index", "b:b", "c:c"]);
+    const models = await listModels([archive, hub], {});
+    expect(models.map((m) => `${m.id}:${m.name}`)).toEqual(["a:from EMBER", "b:b", "c:c"]);
   });
 
-  describe("an index entry and the repository or folder it names", () => {
-    const hf = (repo: string, revision = "abc"): ModelLocation => ({ kind: "huggingface", repo, revision });
-    const ember = (dandisetId: string, path: string): ModelLocation => ({ kind: "ember", dandisetId, path });
-    const indexed = (target: ModelLocation): ModelCardSource => ({ kind: "index", target });
-
-    it("lists the index entry alone, whatever revision and source order", async () => {
-      const hub = source("Hugging Face", [
-        card("hf:lab/mouse", { source: hf("lab/mouse") }),
-        card("hf:lab/fly", { source: hf("lab/fly") }),
-      ]);
-      const archive = source("EMBER", [
-        card("ember:000123/rat", { source: ember("000123", "derivatives/sleap/models/rat") }),
-        card("ember:000999/rat", { source: ember("000999", "derivatives/sleap/models/rat") }),
-      ]);
-      const index = source("Model index", [
-        card("index:mouse", { source: indexed(hf("lab/mouse", "v1")) }),
-        card("index:rat", { source: indexed(ember("000123", "derivatives/sleap/models/rat/")) }),
-      ]);
-      const onReplaced = vi.fn();
-      const models = await listModels([hub, archive, index, source("unsourced", [card("mock:x")])], {}, { onReplaced });
-      expect(models.map((m) => [m.id, m.sourceLabel])).toEqual([
-        ["hf:lab/fly", "from Hugging Face lab/fly"],
-        ["ember:000999/rat", "from EMBER dandiset 000999"],
-        ["index:mouse", "from the model index (Hugging Face lab/mouse)"],
-        ["index:rat", "from the model index (EMBER dandiset 000123)"],
-        ["mock:x", undefined],
-      ]);
-      expect(onReplaced.mock.calls.map(([replaced]: [HostModelCard]) => replaced.id)).toEqual([
-        "hf:lab/mouse",
-        "ember:000123/rat",
-      ]);
-    });
-
-    it("matches a repository whatever case either names it, and a folder however the entry splits its path", async () => {
-      const hub = source("Hugging Face", [card("hf:talmolab/mice", { source: hf("talmolab/mice") })]);
-      const archive = source("EMBER", [
-        card("ember:000123/m", { source: ember("000123", "derivatives/sleap/models/m") }),
-      ]);
-      const index = source("Model index", [
-        card("index:mice", { source: indexed(hf("Talmolab/Mice", "v1")) }),
-        card("index:m", { files: folder("m"), source: indexed(ember("000123", "derivatives/sleap/models")) }),
-      ]);
-      const models = await listModels([hub, archive, index], {});
-      expect(models.map((m) => m.id)).toEqual(["index:mice", "index:m"]);
-    });
-
-    it("keeps a direct listing whose model folders the index entries name only some of", async () => {
-      const topDown = [...folder("centroid"), ...folder("centered_instance")];
-      const hub = source("Hugging Face", [
-        card("hf:lab/zoo/fly", { files: folder("fly"), source: hf("lab/zoo") }),
-        card("hf:lab/zoo/mouse", { files: folder("mouse"), source: hf("lab/zoo") }),
-        card("hf:lab/td", { files: topDown, source: hf("lab/td") }),
-        card("hf:lab/empty", { files: [], source: hf("lab/empty") }),
-      ]);
-      const index = source("Model index", [
-        card("index:fly", { files: folder("fly"), source: indexed(hf("lab/zoo", "v1")) }),
-        card("index:centroid", { files: folder("centroid"), source: indexed(hf("lab/td", "v1")) }),
-        card("index:empty", { source: indexed(hf("lab/empty", "v1")) }),
-      ]);
-      const models = await listModels([hub, index], {});
-      expect(models.map((m) => m.id)).toEqual([
-        "hf:lab/zoo/mouse",
-        "hf:lab/td",
-        "hf:lab/empty",
-        "index:fly",
-        "index:centroid",
-        "index:empty",
-      ]);
-    });
-
-    it("keeps the first source's card for a shared id, and only an index entry kept replaces a listing", async () => {
-      const first = source("first", [card("index:mouse", { name: "first" })]);
-      const second = source("second", [
-        card("index:mouse", { name: "second", source: indexed(hf("lab/mouse")) }),
-        card("hf:lab/mouse", { source: hf("lab/mouse") }),
-      ]);
-      const models = await listModels([first, second], {});
-      expect(models.map((m) => `${m.id}:${m.name}`)).toEqual(["index:mouse:first", "hf:lab/mouse:hf:lab/mouse"]);
-    });
-
-    it("finds the index entry by the repository it replaced", async () => {
-      const hub = source("Hugging Face", [card("hf:lab/mouse", { source: hf("lab/mouse") })]);
-      const index = source("Model index", [card("index:m", { name: "Mouse", source: indexed(hf("lab/mouse")) })]);
-      const models = await listModels([index, hub], { text: "lab/mouse" });
-      expect(models.map((m) => m.id)).toEqual(["index:m"]);
-    });
+  it("labels each card that says where it was found, for the picker", async () => {
+    const hub = source("Hugging Face", [
+      card("hf:lab/fly", { source: { kind: "huggingface", repo: "lab/fly", revision: "abc" } }),
+      card("mock:x"),
+    ]);
+    const archive = source("EMBER", [
+      card("ember:000999/rat", {
+        source: { kind: "ember", dandisetId: "000999", path: "derivatives/sleap/models/rat" },
+      }),
+    ]);
+    const models = await listModels([hub, archive], {});
+    expect(models.map((m) => [m.id, m.sourceLabel])).toEqual([
+      ["hf:lab/fly", "from Hugging Face lab/fly"],
+      ["mock:x", undefined],
+      ["ember:000999/rat", "from EMBER dandiset 000999"],
+    ]);
   });
 
   it("passes the query and signal to every source", async () => {

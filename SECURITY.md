@@ -53,7 +53,7 @@ Do the same here: if such a service ever needs to know something it can't resolv
 There is one named exception: the central Pennsieve compute proxy, at the base URL set as `COMPUTE_PROXY_URL` in `src/lib/computeClient.ts`, receives the signed-in user's EMBER access token.
 
 - **Where:** only that host, and only on the job API in [docs/COMPUTE_API.md](docs/COMPUTE_API.md#endpoints): `POST /jobs`, `GET /jobs/{id}/events` and `POST /jobs/{id}/cancel`.
-  No other companion service gets it; the model index and Hugging Face are read with no credentials.
+  No other companion service gets it; Hugging Face is read with no credentials.
 - **Why:** single sign-on for jobs.
   The proxy runs them under its own service account, so it needs to know which EMBER user asked and that they may read the inputs and write the destination dandiset, and EMBER's token is the only identity the page has.
 - **What the proxy may do with it:** identify the user and check their permissions on EMBER, then record them as the job's requester.
