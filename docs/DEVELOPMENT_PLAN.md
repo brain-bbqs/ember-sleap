@@ -43,12 +43,12 @@ Rough effort: about 9 to 15 engineer-weeks for one developer. The end-to-end pro
 
 ## Progress in this repository
 
-Updated 2026-11-22. Nothing upstream has been touched: no fork, no PRs, no proposal issue. Until the component exists, a **stand-in** (`src/ui/sleapStandIn.ts`) mounts through the proposed contract (`src/lib/sleapContract.ts`) and drives every host callback, so the host side is built and tested now. Swapping in the real package is one function, `loadSleapComponent` in `src/ui/sleapComponent.ts`.
+Updated 2026-11-23. Nothing upstream has been touched: no fork, no PRs, no proposal issue. Until the component exists, a **stand-in** (`src/ui/sleapStandIn.ts`) mounts through the proposed contract (`src/lib/sleapContract.ts`) and drives every host callback, so the host side is built and tested now. Swapping in the real package is one function, `loadSleapComponent` in `src/ui/sleapComponent.ts`.
 
 | Milestone | ember-sleap part | State |
 | --- | --- | --- |
 | M1 | Scaffold from `bbqs-web-app-template`, with sign-in | Done. Sign-in goes through `@brain-bbqs/ember-client` with ember-sleap's own OAuth app on EMBER; its redirect URIs are still to confirm ([EMBER sign-in](#ember-sign-in)). Served at the GitHub Pages default, `brain-bbqs.github.io/ember-sleap/`, with no custom domain for now. |
-| M3 | Mount the component | Done against the stand-in, with `compute.builtIn: false` and every `pageEffects` off. |
+| M3 | Mount the component | Done against the stand-in, with `compute.builtIn: false` and every `pageEffects` off. Below the BBQS header (SLEAP's logo, the Talmo Lab mark, theme and EMBER sign-in) the page is the SLEAP app, filling the window, with no footer; the stand-in is laid out and colored as the SLEAP web app (menu bar, start screen with New Project and Open Project, canvas, side panels, status bar), and the app mounts at boot to its start screen. A thin EMBER bar between the two says where the open project is and closes it. |
 | M4 | Open and save on EMBER as BIDS derivatives | Open verified live (dandiset 000398: `glob` listing, `/download/` to a presigned S3 link, ranged read of the extensionless URL by declared type). Save runs end to end in Playwright against a routed archive (dandi-etag hashed in a worker pool, multipart upload, asset create or replace, `dataset_description.json` and `.bidsignore` on first save, one labels file per source project, and a replace / keep both / cancel question when that file exists); not yet run against the real archive. |
 | M5 | Model sources | Hugging Face, EMBER `derivatives/sleap/models/` and `models.json` index sources written and unit-tested ([MODEL_INDEX.md](MODEL_INDEX.md)). A card names the model folder of each file, so a top-down model carries its centroid and centered-instance folders (on EMBER, a subfolder per head) and a track job sends both; a folder without its config and checkpoint, or a top-down card without a folder per head, is left out, and folders that are not one top-down model's are listed as a model each. Each card says where it was found, and index entries replace the direct listing of a Hugging Face or EMBER model whose every folder they name. `docs/examples/models.json` is a valid example index, and `npm run check-model-index -- <file>` checks one before it is published. Not live: Hugging Face is unreachable from the build sandbox, and the index dandiset does not exist (`MODEL_INDEX_URL` is null). |
 | M6 | Compute | Proxy client written against a drafted API ([COMPUTE_API.md](COMPUTE_API.md)); jobs run on an in-browser stub emitting upstream's `job.*` events until `COMPUTE_PROXY_URL` is set. A model the stub trains is listed in the picker under the id the EMBER source would give its folder, so inference can name it. Each job input carries its EMBER asset (id, path and stable `/download/` URL), a project saved since it was opened is sent as what its latest save wrote, and labels sent inline are saved to EMBER as a `desc-trainingset` package first, so the proxy only ever receives files on EMBER. A completed inference job's `predictions` are listed under the app (only `.slp` and `.pkg.slp` paths under `derivatives/sleap/` in the job's own dandiset; anything else is dropped with a warning) and open from EMBER by path, saying when a file is not there yet; proofreading one and saving writes `desc-labels<Source>` beside it. Runs end to end in Playwright against the stub and a routed archive. |
@@ -119,6 +119,7 @@ export interface MountOptions {
 }
 
 export interface SleapHost {
+  chooseProject?(intent: "new" | "open"): void;                          // New/Open Project go to the host's picker
   save?(file: Blob, name: string, ref?: HostRef): Promise<HostRef>;       // Ctrl+S, File > Save
   resolveVideo?(storedPath: string, project?: HostRef): Promise<ResolvedFile | null>;
   refreshUrl?(file: ResolvedFile): Promise<ResolvedFile>;                 // after a 403
@@ -130,8 +131,15 @@ export interface SleapHost {
 
 export interface SleapAppHandle {
   open(file: ResolvedFile & { ref?: HostRef }): Promise<void>;
+  create(project: NewProjectRequest): Promise<void>;                     // a new, unsaved project on the host's videos
   isDirty(): boolean;
   unmount(): void;
+}
+
+export interface NewProjectRequest {
+  name: string;
+  videos: (ResolvedFile & { storedPath: string })[];                     // storedPath: what the .slp records
+  ref?: HostRef;
 }
 
 export interface ResolvedFile {
@@ -227,7 +235,7 @@ ember-sleap's Playwright suite must show:
 | 4 | One container for all 36 portals | Medium | None |
 | 5 | Keyboard shortcuts bound to the app root | Medium | None |
 | 6 | Page-level side effects become options | Small | None by default |
-| 7a | Host storage callbacks: `save`, `resolveVideo`, `refreshUrl`, `open` | Medium | None by default |
+| 7a | Host storage callbacks: `save`, `resolveVideo`, `refreshUrl`, `open`, `create`, `chooseProject` | Medium | None by default |
 | 7b | Host model catalogue: `listModels` and the model-card picker | Medium | None by default |
 | 7c | Compute backend interface; host jobs; `compute.builtIn` switch | Large | None by default |
 | 8 | Library build, `mountSleapApp`, package exports, `npm publish` in the release workflow | Medium | New distribution channel |
@@ -274,7 +282,7 @@ Verified live against `api-dandi.emberarchive.org` on 2026-11-21 and 2026-11-22:
 | S3 bucket `ember-open-data` | Ranged GET returns 206 with `Access-Control-Allow-Origin: *`; preflight allows `PUT`; `ETag` is exposed for multipart upload. |
 | Download links | `/api/assets/{id}/download/` redirects to a presigned S3 URL valid for 6 hours. |
 
-Open: our EMBER picker (from `@brain-bbqs/ember-client` and `@brain-bbqs/ui`) resolves the asset to a URL and calls `app.open({ url, fileType, name, ref })`.
+Open: the app's New Project… and Open Project… (menu and start screen) call `host.chooseProject`, and our EMBER picker asks for a dandiset. Open Project lists its SLEAP projects; opening one resolves the asset to a URL and calls `app.open({ url, fileType, name, ref })`. A dandiset with no SLEAP project yet, or any dandiset chosen for New Project, starts a new project on its `.mp4` and `.avi` videos (outside `derivatives/`): each is resolved to a link and recorded by its dandiset path, and `app.create({ name, videos, ref })` starts it unsaved, with `ref` at its first video, so the first save lands in that video's subject and session folder. The stand-in writes a new project's `.slp` with `@talmolab/sleap-io.js` (`saveSlpToBytes`), loaded only when that file is first needed.
 
 Save: `host.save` receives the bytes and runs the upload sequence bbqs-uploader already uses: dandi-etag hash, `/uploads/initialize/`, multipart `PUT` to S3, `/complete/`, `/validate/`, then create the asset or `PUT` over the existing one.
 

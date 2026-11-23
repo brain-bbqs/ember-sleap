@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="src/assets/app-logo.svg" width="120" alt="EMBER SLEAP logo"/>
+  <img src="src/assets/sleap-logo.png" width="120" alt="SLEAP logo"/>
   <h1 align="center">EMBER SLEAP</h1>
   <p align="center">
     <a href="https://codecov.io/github/brain-bbqs/ember-sleap?branch=main"><img src="https://codecov.io/github/brain-bbqs/ember-sleap/coverage.svg?branch=main" alt="codecov"></a>
@@ -26,13 +26,15 @@ Swapping in the real package is a change to one function, `loadSleapComponent` i
 
 | Piece                                                  | State                                                                                                                     |
 | ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------- |
+| The page                                               | The SLEAP app below a BBQS header, laid out like the SLEAP web app; the stand-in until the real component ships           |
 | Open a `.slp` or `.pkg.slp` from any readable dandiset | Works against the live archive                                                                                            |
+| Start a new project on a dandiset's videos             | Picking a dandiset with no SLEAP project, or New Project, starts one; its `.slp` is written in the browser on first save  |
 | Save to `derivatives/sleap/` as a BIDS derivative      | Works end to end against a mocked archive; needs sign-in                                                                  |
 | EMBER sign-in                                          | On, with ember-sleap's own OAuth app on EMBER; redirect URIs still to confirm                                             |
 | Model catalogue (Hugging Face, EMBER, central index)   | Sources written and unit-tested, top-down models included; the index dandiset does not exist yet                          |
 | Training and inference                                 | Run on an in-browser stub until the central Pennsieve proxy's job API exists ([docs/COMPUTE_API.md](docs/COMPUTE_API.md)) |
 
-Try it with [`?dandiset=000398`](https://brain-bbqs.github.io/ember-sleap/?dandiset=000398) (a public SLEAP example) or offline with [`?test&mock_project`](https://brain-bbqs.github.io/ember-sleap/?test&mock_project).
+Try it with [`?dandiset=000398`](https://brain-bbqs.github.io/ember-sleap/?dandiset=000398) (a public SLEAP example) or offline with [`?test&mock_project`](https://brain-bbqs.github.io/ember-sleap/?test&mock_project) and [`?test&mock_new_project`](https://brain-bbqs.github.io/ember-sleap/?test&mock_new_project).
 
 ## Local development
 

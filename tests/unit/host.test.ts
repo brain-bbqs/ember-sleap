@@ -239,6 +239,47 @@ function heldSave(storage: ReturnType<typeof setup>["storage"]): { land: (saved:
 }
 
 describe("createSleapHost", () => {
+  it("hands the app's New Project… and Open Project… to the page's picker, and offers none without one", () => {
+    const chooseProject = vi.fn();
+    setup([CARD], { chooseProject }).host.chooseProject!("new");
+    expect(chooseProject).toHaveBeenCalledWith("new");
+    expect(setup().host.chooseProject).toBeUndefined();
+  });
+
+  describe("a new project the page started", () => {
+    const newVideo = { ...VIDEO, storedPath: "sub-01/beh/session1.mp4" };
+    const started = toHostRef({ dandisetId: "000398", path: newVideo.storedPath });
+
+    it("predicts on one of its videos, naming the video's EMBER asset", async () => {
+      const { host, storage, sent } = setup();
+      storage.describe.mockImplementation((url) => (url === VIDEO.url ? archiveOf("v1", newVideo.storedPath) : null));
+      host.rememberNew({ name: "Untitled.slp", videos: [newVideo], ref: started });
+      await host.submitJob(track({ data_path: VIDEO.url }), started);
+      expect(sent().inputs).toEqual([{ ...VIDEO, archive: archiveOf("v1", newVideo.storedPath) }]);
+      expect(sent().project).toEqual({ dandisetId: "000398", path: newVideo.storedPath });
+    });
+
+    it("refuses a job on a video it was never told of", async () => {
+      const { host } = setup();
+      host.rememberNew({ name: "Untitled.slp", videos: [], ref: started });
+      await expect(host.submitJob(track({ data_path: VIDEO.url }), started)).rejects.toThrow();
+    });
+
+    it("saves one with no ref through storage as it is", async () => {
+      const { host, storage } = setup();
+      host.rememberNew({ name: "Untitled.slp", videos: [newVideo] });
+      await host.save(new Blob(["x"]), "Untitled.slp", undefined);
+      expect(storage.save).toHaveBeenCalledWith(expect.any(Blob), "Untitled.slp", undefined);
+    });
+
+    it("follows the project's saves by its ref, so the next save goes under the ref the first returned", async () => {
+      const { host, storage } = setup();
+      host.rememberNew({ name: "Untitled.slp", videos: [newVideo], ref: started });
+      expect(await host.save(new Blob(["x"]), "Untitled.slp", started)).toBe(savedRef);
+      expect(storage.save).toHaveBeenCalledWith(expect.any(Blob), "Untitled.slp", started);
+    });
+  });
+
   it("delegates saving to storage, handing the app the saved file's ref", async () => {
     const { host, storage } = setup();
     const blob = new Blob(["x"]);

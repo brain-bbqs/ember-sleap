@@ -1,14 +1,23 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { newProjectFile } from "../../src/lib/newProjectFile";
 import type {
   HostRef,
   JobEvent,
   MountOptions,
+  NewProjectRequest,
   ResolvedFile,
   SleapAppHandle,
   SleapHost,
 } from "../../src/lib/sleapContract";
 import { describeSignature, mountStandIn, readHead, STAND_IN_VERSION } from "../../src/ui/sleapStandIn";
+
+// The new project's file as its paths, so a test can read back what was written without HDF5
+// (newProjectFile.test.ts writes the real thing).
+// Made through a Response, since jsdom's own Blob cannot be read back.
+vi.mock("../../src/lib/newProjectFile", () => ({
+  newProjectFile: vi.fn((paths: string[]) => new Response(JSON.stringify(paths)).blob()),
+}));
 
 const HDF5 = [0x89, 0x48, 0x44, 0x46, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0];
 const FILE = { url: "https://bucket.example/blobs/abc", fileType: "slp" as const, name: "labels.slp" };
@@ -17,6 +26,15 @@ const FRESH_URL = `${FILE.url}?fresh`;
 const OTHER_REF = { key: "ember:000123:sub-02/other.slp" };
 const OTHER = { url: "https://bucket.example/blobs/def", fileType: "slp" as const, name: "other.slp", ref: OTHER_REF };
 const SAVED = { key: "ember:000123:derivatives/sleap/sub-01/beh/sub-01_desc-labels_pose.slp" };
+const STARTED_REF = { key: "ember:000123:sub-01/beh/top.mp4" };
+const STARTED: NewProjectRequest = {
+  name: "Untitled.slp",
+  videos: [
+    { url: "https://bucket.example/blobs/top", fileType: "mp4", name: "top.mp4", storedPath: "sub-01/beh/top.mp4" },
+    { url: "https://bucket.example/blobs/side", fileType: "mp4", name: "side.mp4", storedPath: "sub-01/beh/side.mp4" },
+  ],
+  ref: STARTED_REF,
+};
 
 function bytesResponse(bytes: number[], status = 206): Response {
   return new Response(new Uint8Array(bytes), { status });
@@ -734,5 +752,185 @@ describe("mountStandIn", () => {
     const event = new Event("beforeunload", { cancelable: true });
     window.dispatchEvent(event);
     expect(event.defaultPrevented).toBe(false);
+  });
+});
+
+describe("the stand-in laid out as the SLEAP web app", () => {
+  it("opens on the start screen, with no project's panels", () => {
+    mount({ host: { chooseProject: vi.fn() } });
+    expect(q(container, "start").hidden).toBe(false);
+    expect(q(container, "project").hidden).toBe(true);
+    expect(q(container, "side").hidden).toBe(true);
+    expect(q(container, "file-name").textContent).toBe("No project loaded");
+    expect(q(container, "start-hint").textContent).toContain("EMBER archive");
+  });
+
+  it.each([
+    ["start-new", null, "new"],
+    ["start-open", null, "open"],
+    ["menu-new", "menu-file", "new"],
+    ["menu-open", "menu-file", "open"],
+  ] as const)("hands %s to the host's picker as %s", (item, menu, intent) => {
+    const chooseProject = vi.fn();
+    mount({ host: { chooseProject } });
+    if (menu) q(container, menu).click();
+    q(container, item).click();
+    expect(chooseProject).toHaveBeenCalledWith(intent);
+  });
+
+  it("says so when the host offers no picker", () => {
+    mount();
+    expect(q(container, "start-hint").textContent).toBe("This page offers no projects to open.");
+    q(container, "start-open").click();
+    expect(q(container, "save-status").textContent).toBe("This page offers no projects to open.");
+  });
+
+  it("opens one menu at a time, and closes it on a pick, a click elsewhere or Escape", () => {
+    mount({ host: { chooseProject: vi.fn() } });
+    const list = (menu: string) => q(container, menu).nextElementSibling as HTMLElement;
+    q(container, "menu-file").click();
+    expect(list("menu-file").hidden).toBe(false);
+    expect(q(container, "menu-file").getAttribute("aria-expanded")).toBe("true");
+    q(container, "menu-predict").click();
+    expect(list("menu-file").hidden).toBe(true);
+    expect(list("menu-predict").hidden).toBe(false);
+    q(container, "menu-predict").click();
+    expect(list("menu-predict").hidden).toBe(true);
+
+    q(container, "menu-file").click();
+    document.body.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+    expect(list("menu-file").hidden).toBe(true);
+
+    q(container, "menu-file").click();
+    container
+      .querySelector(".sleap-app")!
+      .dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    expect(list("menu-file").hidden).toBe(true);
+
+    q(container, "menu-file").click();
+    q(container, "menu-open").dispatchEvent(new Event("pointerdown", { bubbles: true }));
+    expect(list("menu-file").hidden).toBe(false);
+    q(container, "menu-open").click();
+    expect(list("menu-file").hidden).toBe(true);
+  });
+
+  it("leaves the start screen for an opened project, with its panels", async () => {
+    const app = mount();
+    await app.open(FILE);
+    expect(q(container, "start").hidden).toBe(true);
+    expect(q(container, "project").hidden).toBe(false);
+    expect(q(container, "side").hidden).toBe(false);
+    expect(q(container, "video-player").hidden).toBe(true);
+  });
+
+  it("focuses a panel's first control from the icon rail", async () => {
+    const app = mount({ host: { submitJob: vi.fn() } });
+    await app.open(FILE);
+    const rail = [...container.querySelectorAll<HTMLButtonElement>(".sl-rail-button")];
+    expect(rail.map((b) => b.title)).toEqual(["Videos", "Train and predict"]);
+    rail[1].click();
+    expect(document.activeElement).toBe(q(container, "backend"));
+  });
+
+  describe("a new project", () => {
+    it("starts unsaved on the host's videos, showing the first", async () => {
+      const app = mount();
+      await app.create(STARTED);
+      expect(q(container, "start").hidden).toBe(true);
+      expect(q(container, "file-name").textContent).toBe("Untitled.slp");
+      expect(q(container, "file-type").textContent).toBe("new project");
+      expect(q(container, "file-probe").textContent).toBe(
+        "New project on 2 videos. It is not saved yet: Save writes it.",
+      );
+      expect(app.isDirty()).toBe(true);
+      expect(q(container, "dirty").hidden).toBe(false);
+      expect(q(container, "video").hidden).toBe(true);
+      const items = [...q(container, "video-list").querySelectorAll("button")];
+      expect(items.map((b) => b.textContent)).toEqual(["sub-01/beh/top.mp4", "sub-01/beh/side.mp4"]);
+      expect(items.map((b) => b.getAttribute("aria-pressed"))).toEqual(["true", "false"]);
+      expect(q<HTMLVideoElement>(container, "video-player").hidden).toBe(false);
+      expect(q<HTMLVideoElement>(container, "video-player").getAttribute("src")).toBe(STARTED.videos[0].url);
+
+      items[1].click();
+      expect(q<HTMLVideoElement>(container, "video-player").getAttribute("src")).toBe(STARTED.videos[1].url);
+      expect(items.map((b) => b.getAttribute("aria-pressed"))).toEqual(["false", "true"]);
+    });
+
+    it("saves a file of its own recording each video by its path, then saves over what that returned", async () => {
+      const save = vi.fn<NonNullable<SleapHost["save"]>>(() => Promise.resolve(SAVED));
+      const app = mount({ host: { save } });
+      await app.create(STARTED);
+      q(container, "save").click();
+      await vi.waitFor(() => expect(q(container, "save-status").textContent).toMatch(/^Saved /));
+      expect(vi.mocked(newProjectFile)).toHaveBeenCalledWith(["sub-01/beh/top.mp4", "sub-01/beh/side.mp4"]);
+      const [blob, name, ref] = save.mock.calls[0];
+      expect(JSON.parse(await new Response(blob).text())).toEqual(["sub-01/beh/top.mp4", "sub-01/beh/side.mp4"]);
+      expect([name, ref]).toEqual(["Untitled.slp", STARTED_REF]);
+      expect(app.isDirty()).toBe(false);
+
+      q(container, "save").click();
+      await vi.waitFor(() => expect(save).toHaveBeenCalledTimes(2));
+      expect(save.mock.calls[1][2]).toBe(SAVED);
+    });
+
+    it("trains on its file sent inline, since it has no link of its own", async () => {
+      const submitJob = vi.fn<NonNullable<SleapHost["submitJob"]>>(() => Promise.resolve({ jobId: "job-1" }));
+      const app = mount({ compute: { builtIn: false }, host: { submitJob } });
+      await app.create(STARTED);
+      q(container, "menu-predict").click();
+      q(container, "menu-train").click();
+      await vi.waitFor(() => expect(submitJob).toHaveBeenCalled());
+      const [spec, ref] = submitJob.mock.calls[0];
+      expect(spec).toMatchObject({ type: "train", labels_content: expect.any(String) });
+      expect(spec).not.toHaveProperty("labels_path");
+      expect(atob((spec as { labels_content: string }).labels_content)).toBe(
+        JSON.stringify(["sub-01/beh/top.mp4", "sub-01/beh/side.mp4"]),
+      );
+      expect(ref).toBe(STARTED_REF);
+    });
+
+    it("predicts on the video it shows", async () => {
+      const submitJob = vi.fn<NonNullable<SleapHost["submitJob"]>>(() => Promise.resolve({ jobId: "job-1" }));
+      const listModels = () => Promise.resolve([{ id: "hf:lab/mouse", name: "Mouse", heads: [], files: [] }]);
+      const app = mount({ compute: { builtIn: false }, host: { submitJob, listModels } });
+      await app.create(STARTED);
+      q(container, "video-list").querySelectorAll("button")[1].click();
+      q(container, "menu-predict").click();
+      q(container, "menu-models").click();
+      await vi.waitFor(() => expect(container.querySelectorAll('[data-role="predict"]').length).toBe(1));
+      q(container, "predict").click();
+      await vi.waitFor(() => expect(submitJob).toHaveBeenCalled());
+      expect(submitJob).toHaveBeenCalledWith(
+        { type: "track", data_path: STARTED.videos[1].url, model_paths: ["hf:lab/mouse"] },
+        STARTED_REF,
+      );
+    });
+
+    it("shows no video and predicts on nothing when it has no videos", async () => {
+      const submitJob = vi.fn<NonNullable<SleapHost["submitJob"]>>(() => Promise.resolve({ jobId: "job-1" }));
+      const listModels = () => Promise.resolve([{ id: "hf:lab/mouse", name: "Mouse", heads: [], files: [] }]);
+      const app = mount({ compute: { builtIn: false }, host: { submitJob, listModels } });
+      await app.create({ ...STARTED, videos: [] });
+      expect(q(container, "video-player").hidden).toBe(true);
+      expect(q(container, "video-list").hidden).toBe(true);
+      expect(q(container, "file-probe").textContent).toBe(
+        "New project on 0 videos. It is not saved yet: Save writes it.",
+      );
+      q(container, "list-models").click();
+      await vi.waitFor(() => expect(container.querySelectorAll('[data-role="predict"]').length).toBe(1));
+      q(container, "predict").click();
+      await flush();
+      expect(submitJob).not.toHaveBeenCalled();
+    });
+
+    it("gives way to a project opened after it", async () => {
+      const app = mount();
+      await app.create(STARTED);
+      await app.open(FILE);
+      expect(q(container, "file-name").textContent).toBe("labels.slp");
+      expect(q(container, "video-list").children).toHaveLength(0);
+      expect(q(container, "video-player").hidden).toBe(true);
+      expect(app.isDirty()).toBe(false);
+    });
   });
 });

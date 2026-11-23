@@ -276,15 +276,15 @@ describe("the predictions an inference job wrote", () => {
     const releaseSide = hold("download:p2");
     predictionsButton(SIDE).click();
     el("close-project-btn").click();
-    expect(el("app-card").hidden).toBe(true);
+    expect(el("close-project-btn").hidden).toBe(true);
     expect(el("predictions").hidden).toBe(true);
     expect(listed()).toEqual([]);
 
     releaseSide();
     await settle();
     await settle();
-    expect(el("app-card").hidden).toBe(true);
-    expect(el("open-card").hidden).toBe(false);
+    expect(el("close-project-btn").hidden).toBe(true);
+    expect(el("project-location").textContent).toBe("No project open");
     expect(el("predictions-status").textContent).toBe("");
   });
 
@@ -311,7 +311,7 @@ describe("the predictions an inference job wrote", () => {
     releaseEvents();
     await vi.waitFor(() => expect(closedJobState.textContent).toBe("completed"));
 
-    expect(el("app-card").hidden).toBe(false);
+    expect(el("close-project-btn").hidden).toBe(false);
     expect(el("predictions").hidden).toBe(true);
     expect(listed()).toEqual([]);
     el("close-project-btn").click();

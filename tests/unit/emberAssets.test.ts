@@ -9,6 +9,7 @@ import {
   findAssetsByPrefix,
   listOwnDandisets,
   listProjects,
+  listVideos,
   resolveDownloadUrl,
 } from "../../src/lib/emberAssets";
 
@@ -123,6 +124,35 @@ describe("listProjects", () => {
     });
     expect(await listProjects(cfg())).toEqual([]);
     expect(fetchMock).toHaveBeenCalledTimes(20);
+  });
+});
+
+describe("listVideos", () => {
+  it("keeps the .mp4 and .avi assets outside derivatives/, in path order", async () => {
+    stubApi({
+      [assetsPath("glob=*.mp4")]: {
+        results: [
+          { asset_id: "m2", path: "sub-02/beh/side.mp4", size: 2 },
+          { asset_id: "d", path: "derivatives/sleap/sub-01/beh/render.mp4", size: 3 },
+          { asset_id: "m1", path: "sub-01/beh/top.mp4", size: 1 },
+        ],
+        next: null,
+      },
+      [assetsPath("glob=*.avi")]: { results: [{ asset_id: "a1", path: "sub-01/beh/old.avi", size: 4 }], next: null },
+    });
+    expect(await listVideos(cfg())).toEqual([
+      { asset_id: "a1", path: "sub-01/beh/old.avi", size: 4, fileType: "avi" },
+      { asset_id: "m1", path: "sub-01/beh/top.mp4", size: 1, fileType: "mp4" },
+      { asset_id: "m2", path: "sub-02/beh/side.mp4", size: 2, fileType: "mp4" },
+    ]);
+  });
+
+  it("is empty for a dandiset with no videos", async () => {
+    stubApi({
+      [assetsPath("glob=*.mp4")]: { results: [], next: null },
+      [assetsPath("glob=*.avi")]: { results: [], next: null },
+    });
+    expect(await listVideos(cfg())).toEqual([]);
   });
 });
 

@@ -77,6 +77,27 @@ export async function listProjects(cfg: ArchiveConfig): Promise<ProjectAsset[]> 
   });
 }
 
+/** The video types a new project starts from; `.h5` is left out, since most HDF5 files are not videos. */
+const VIDEO_GLOBS = ["*.mp4", "*.avi"] as const;
+
+/**
+ * Every video a new project can start from, in path order: the dandiset's `.mp4` and `.avi` files,
+ * minus anything under `derivatives/` (renders and outputs of other tools, not recorded video).
+ */
+export async function listVideos(cfg: ArchiveConfig): Promise<ProjectAsset[]> {
+  const found = await Promise.all(VIDEO_GLOBS.map((glob) => listDraftAssets(cfg, `glob=${glob}`)));
+  return (
+    found
+      .flat()
+      .flatMap((asset) => {
+        const fileType = fileTypeOfPath(asset.path);
+        return fileType && !isProjectType(fileType) && !isDerivativePath(asset.path) ? [{ ...asset, fileType }] : [];
+      })
+      // Two globs never match one path, so no two paths here are equal.
+      .sort((a, b) => (a.path < b.path ? -1 : 1))
+  );
+}
+
 /** Every draft asset whose path starts with `prefix`, which is how the archive's `path` filter matches. */
 export function findAssetsByPrefix(cfg: ArchiveConfig, prefix: string): Promise<ArchiveAsset[]> {
   return listDraftAssets(cfg, `path=${encodeURIComponent(prefix)}`);

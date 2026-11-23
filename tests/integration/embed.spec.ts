@@ -187,4 +187,24 @@ test.describe("the embedded SLEAP app", () => {
     await expect(role(page, "job-state")).toHaveText("completed");
     expect([...hosts]).toEqual([new URL(page.url()).host]);
   });
+
+  test("saves a new project as an .slp written in the browser, its writer loaded from this page's own host", async ({
+    page,
+  }) => {
+    const hosts = new Set<string>();
+    page.on("request", (request) => {
+      const url = new URL(request.url());
+      if (url.protocol.startsWith("http")) hosts.add(url.host);
+    });
+    await page.goto("/?test&mock_new_project");
+    await expect(role(page, "file-type")).toHaveText("new project");
+    await expect(role(page, "video-list").locator("button")).toHaveCount(2);
+    await role(page, "save").click();
+    await expect(page.locator("#host-status")).toHaveText(
+      "Saved in memory (test injection): derivatives/sleap/sub-mock/beh/sub-mock_desc-labelsTestInjectionMockVideo1_pose.slp",
+      { timeout: 20_000 },
+    );
+    await expect(role(page, "dirty")).toBeHidden();
+    expect([...hosts]).toEqual([new URL(page.url()).host]);
+  });
 });

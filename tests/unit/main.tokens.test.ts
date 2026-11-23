@@ -93,7 +93,11 @@ describe("tokens across refreshes, sign-out and other tabs", () => {
     expect(fetchMock.calls).toEqual([]);
 
     answer(expired(1), fresh(1));
-    await vi.waitFor(() => expect(el("open-status").textContent).toBe("Dandiset 000123 holds no SLEAP projects."));
+    await vi.waitFor(() =>
+      expect(el("open-status").textContent).toBe(
+        "Dandiset 000123 holds no SLEAP projects, and no videos to start one from.",
+      ),
+    );
     await vi.waitFor(() => expect(el("dandiset-options").children.length).toBe(1));
     await vi.waitFor(() => expect(el("oauthUsername").textContent).toBe("fresh1"));
     expect(fakes.oauth.ensureFreshToken).toHaveBeenCalledTimes(1);
@@ -104,7 +108,11 @@ describe("tokens across refreshes, sign-out and other tabs", () => {
   it("writes only the dandiset id when listing, leaving tokens another tab stored alone", async () => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({ dandisetId: "000123", oauth: fresh(2) }));
     submitDandiset("000456");
-    await vi.waitFor(() => expect(el("open-status").textContent).toBe("Dandiset 000456 holds no SLEAP projects."));
+    await vi.waitFor(() =>
+      expect(el("open-status").textContent).toBe(
+        "Dandiset 000456 holds no SLEAP projects, and no videos to start one from.",
+      ),
+    );
     expect(stored()).toEqual({ dandisetId: "000456", oauth: fresh(2) });
   });
 
@@ -191,7 +199,11 @@ describe("tokens across refreshes, sign-out and other tabs", () => {
     submitDandiset("000123");
     await vi.waitFor(() => expect(fakes.pending.map((p) => p.from)).toEqual([expired(6)]));
     answer(expired(6), fresh(6));
-    await vi.waitFor(() => expect(el("open-status").textContent).toBe("Dandiset 000123 holds no SLEAP projects."));
+    await vi.waitFor(() =>
+      expect(el("open-status").textContent).toBe(
+        "Dandiset 000123 holds no SLEAP projects, and no videos to start one from.",
+      ),
+    );
     expect(stored()).toEqual({ dandisetId: "000123", oauth: fresh(6) });
   });
 });

@@ -10,6 +10,7 @@ import {
 } from "../../src/lib/emberAssets";
 import {
   createEmberStorage,
+  NEW_PROJECT_NAME,
   notOnEmberYet,
   type EmberStorageOptions,
   type OverwriteChoice,
@@ -108,6 +109,60 @@ describe("open", () => {
 
   it("describes no link it did not hand out", () => {
     expect(setup().storage.describe("https://elsewhere.test/x")).toBe(null);
+  });
+});
+
+describe("startProject", () => {
+  const videos: ProjectAsset[] = [
+    { asset_id: "v1", path: "sub-01/ses-01/behavior/top.mp4", size: 1, fileType: "mp4" },
+    { asset_id: "v2", path: "sub-01/ses-01/behavior/side.avi", size: 2, fileType: "avi" },
+    { asset_id: "v3", path: "sub-02/behavior/top.mp4", size: 3, fileType: "mp4" },
+    { asset_id: "v4", path: "sub-02/behavior/side.mp4", size: 4, fileType: "mp4" },
+    { asset_id: "v5", path: "sub-03/behavior/top.mp4", size: 5, fileType: "mp4" },
+  ];
+
+  it("resolves every video to a link it can renew and describe, recorded by its path, belonging where the first is", async () => {
+    const { storage } = setup();
+    const request = await storage.startProject("000398", videos);
+    expect(request.name).toBe(NEW_PROJECT_NAME);
+    expect(request.ref).toEqual(ref("sub-01/ses-01/behavior/top.mp4"));
+    expect(request.videos.map((v) => [v.storedPath, v.fileType, v.name])).toEqual(
+      videos.map((v) => [v.path, v.fileType, baseName(v.path)]),
+    );
+    expect(new Set(request.videos.map((v) => v.url)).size).toBe(videos.length);
+    expect(resolveUrl).toHaveBeenCalledTimes(videos.length);
+    for (const [i, video] of request.videos.entries()) {
+      expect(storage.describe(video.url)).toMatchObject({ dandisetId: "000398", assetId: videos[i].asset_id });
+    }
+  });
+
+  it("resolves at most four links at once", async () => {
+    let inFlight = 0;
+    let most = 0;
+    resolveUrl.mockImplementation(async (_, assetId) => {
+      most = Math.max(most, ++inFlight);
+      await new Promise((r) => setTimeout(r, 1));
+      inFlight--;
+      return `https://s3.test/${assetId}`;
+    });
+    const { storage } = setup();
+    await storage.startProject("000398", videos);
+    expect(most).toBe(4);
+  });
+
+  it("refuses a dandiset with no videos, resolving nothing", async () => {
+    const { storage } = setup();
+    await expect(storage.startProject("000398", [])).rejects.toThrow(
+      "Dandiset 000398 holds no videos to start a project from.",
+    );
+    expect(resolveUrl).not.toHaveBeenCalled();
+  });
+
+  it("saves a new project beside its first video, as a labels file named after it", async () => {
+    const { storage } = setup();
+    const request = await storage.startProject("000398", videos);
+    const saved = await storage.save(file, request.name, request.ref);
+    expect(saved.ref).toEqual(ref("derivatives/sleap/sub-01/ses-01/beh/sub-01_ses-01_desc-labelsBehaviorTop_pose.slp"));
   });
 });
 

@@ -11,16 +11,22 @@ Copy this file to `docs/user_tests/<tester>.md`, fill it in, and open it as a PR
 
 ## Opening from EMBER
 
-- [ ] Entering `000398` and pressing "List projects" lists its two `.slp` projects with their sizes
-- [ ] Opening `sub-NONE/sub-NONE_sourcedata.slp` shows the project card and the stand-in reads an HDF5 signature
-- [ ] A dandiset id with no projects says so, and a nonsense id asks for a real one
-- [ ] `?dandiset=000398` in the address bar lists the projects on load
-- [ ] "Close project" returns to the picker, asking first if there are unsaved edits
+- [ ] "Open Project", then `000398` and "List projects", lists its two `.slp` projects with their sizes
+- [ ] Opening `sub-NONE/sub-NONE_sourcedata.slp` shows it in the SLEAP app and the stand-in reads an HDF5 signature
+- [ ] A dandiset id with neither projects nor videos says so, and a nonsense id asks for a real one
+- [ ] `?dandiset=000398` in the address bar opens the picker and lists the projects on load
+- [ ] "Close project" returns to the SLEAP start screen, asking first if there are unsaved edits
+
+## Starting a new project
+
+- [ ] The page opens on the SLEAP app's start screen, below the header, with no footer
+- [ ] "Open Project" on a dandiset with videos but no `.slp` starts a new project on its videos, listed in the Videos panel, the first playing in the canvas
+- [ ] "New Project" on a dandiset that has projects still starts a new one
+- [ ] Saving a new project (signed in, on a dandiset you own) writes `derivatives/sleap/sub-.../beh/..._desc-labels<FirstVideo>_pose.slp`, which the SLEAP desktop app opens with the videos listed
 
 ## Saving (needs sign-in)
 
 - [ ] "Sign in" goes to EMBER's GitHub sign-in and comes back to this page signed in
-
 - [ ] Signing in shows the account in the header and suggests your own dandisets in the dandiset field
 - [ ] On a dandiset you own, "Make an edit" then Ctrl+S inside the app saves to `derivatives/sleap/sub-.../beh/..._desc-labels<Source>_pose.slp`, named after the project (for example `desc-labelsCamTop` for `cam-top.slp`)
 - [ ] Saving a second project of the same session writes a labels file of its own

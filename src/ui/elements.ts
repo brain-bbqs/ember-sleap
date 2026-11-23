@@ -1,7 +1,7 @@
 // Typed lookups for the static skeleton markup in index.html. Every id the app touches is
 // registered here, so a renamed or dropped element fails on import (and in the boot smoke test)
 // rather than as a null dereference somewhere down the page.
-import { getShellElements, getWhatsNewElements, required } from "@brain-bbqs/ui";
+import { getShellElements, required } from "@brain-bbqs/ui";
 
 /** The shell: theme toggle, version stamp and the EMBER account menu, looked up by @brain-bbqs/ui. */
 export function getShell() {
@@ -16,19 +16,25 @@ export function getElements() {
       confirmBtn: required<HTMLButtonElement>("humanSubjectsConfirmBtn"),
       confirmed: required<HTMLElement>("humanSubjectsConfirmed"),
     },
-    openCard: required<HTMLElement>("open-card"),
+    emberBar: required<HTMLDivElement>("ember-bar"),
+    projectTitle: required<HTMLSpanElement>("project-title"),
+    projectLocation: required<HTMLSpanElement>("project-location"),
+    hostStatus: required<HTMLSpanElement>("host-status"),
+    closeProjectBtn: required<HTMLButtonElement>("close-project-btn"),
+    sleapRoot: required<HTMLDivElement>("sleap-root"),
+    openDialog: {
+      dialog: required<HTMLDialogElement>("open-dialog"),
+      title: required<HTMLHeadingElement>("open-dialog-title"),
+      close: required<HTMLButtonElement>("open-dialog-close"),
+      intro: required<HTMLParagraphElement>("open-dialog-intro"),
+    },
     openForm: required<HTMLFormElement>("open-form"),
     dandisetInput: required<HTMLInputElement>("dandiset-input"),
     dandisetOptions: required<HTMLDataListElement>("dandiset-options"),
     listProjectsBtn: required<HTMLButtonElement>("list-projects-btn"),
     openStatus: required<HTMLParagraphElement>("open-status"),
     projectList: required<HTMLUListElement>("project-list"),
-    appCard: required<HTMLElement>("app-card"),
-    projectTitle: required<HTMLHeadingElement>("project-title"),
-    closeProjectBtn: required<HTMLButtonElement>("close-project-btn"),
-    projectLocation: required<HTMLParagraphElement>("project-location"),
-    sleapRoot: required<HTMLDivElement>("sleap-root"),
-    hostStatus: required<HTMLParagraphElement>("host-status"),
+    newProjectBtn: required<HTMLButtonElement>("new-project-btn"),
     predictions: {
       section: required<HTMLDivElement>("predictions"),
       list: required<HTMLUListElement>("predictions-list"),
@@ -56,7 +62,6 @@ export function getElements() {
       replace: required<HTMLButtonElement>("overwrite-replace"),
       keep: required<HTMLButtonElement>("overwrite-keep"),
     },
-    whatsNew: getWhatsNewElements(),
   };
 }
 

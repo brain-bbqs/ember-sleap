@@ -18,7 +18,9 @@ import type {
   JobSpec,
   ModelCard,
   ModelQuery,
+  NewProjectRequest,
   OpenRequest,
+  ProjectIntent,
   ResolvedFile,
   SleapHost,
   TrainJobSpec,
@@ -36,15 +38,19 @@ export interface HostDeps {
    * it ends goes unreported, and so does one submitted before the page's last `forgetJobs`.
    */
   onPredictions?: (jobId: string, files: EmberLocation[]) => void;
+  /** The page's own picker for the app's New Project… and Open Project…; without it the app picks local files. */
+  chooseProject?: (intent: ProjectIntent) => void;
 }
 
 /** The callbacks the app is mounted with, plus what the page tells the host as it hands files over. */
-export interface PageHost extends Required<SleapHost> {
+export interface PageHost extends Required<Omit<SleapHost, "chooseProject">>, Pick<SleapHost, "chooseProject"> {
   /**
    * Records a project the page opened, so later job specs that name its URL can say what it is,
    * and name what the project's saves wrote once it has been saved.
    */
   remember(file: OpenRequest): void;
+  /** Records a new project the page started, so job specs can name its videos and its saves are followed. */
+  rememberNew(request: NewProjectRequest): void;
   /**
    * Stops reporting the predictions of every job submitted so far, one whose submission is still on
    * its way included, as closing the project does: they belong to an app that is gone.
@@ -145,7 +151,14 @@ interface TrackedJob {
 
 const settled = () => undefined;
 
-export function createSleapHost({ storage, modelSources, compute, onModelWarning, onPredictions }: HostDeps): PageHost {
+export function createSleapHost({
+  storage,
+  modelSources,
+  compute,
+  onModelWarning,
+  onPredictions,
+  chooseProject,
+}: HostDeps): PageHost {
   const files = new Map<string, ResolvedFile>();
   const cards = new Map<string, ModelCard>();
   // Track jobs submitted from a project on EMBER, by job id, until each ends: one that has left
@@ -211,10 +224,16 @@ export function createSleapHost({ storage, modelSources, compute, onModelWarning
   }
 
   return {
+    ...(chooseProject ? { chooseProject } : {}),
     remember(request) {
       know(request);
       const project: OpenedProject = { order: ++opens, saves: Promise.resolve() };
       projectsByLink.set(request.url, project);
+      if (request.ref) projectsByRef.set(request.ref.key, project);
+    },
+    rememberNew(request) {
+      request.videos.forEach(know);
+      const project: OpenedProject = { order: ++opens, saves: Promise.resolve() };
       if (request.ref) projectsByRef.set(request.ref.key, project);
     },
     async save(file, name, ref) {

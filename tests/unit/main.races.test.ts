@@ -102,7 +102,7 @@ function download(assetId: string): Response | Promise<Response> {
 
 function closeProject(): void {
   el("close-project-btn").click();
-  expect(el("open-card").hidden).toBe(false);
+  expect(el("close-project-btn").hidden).toBe(true);
 }
 
 beforeAll(async () => {
@@ -153,12 +153,15 @@ describe("listings and opens that resolve out of order", () => {
 
   it("drops an open overtaken by another click while the app is still loading", async () => {
     projectButton("sub-01/two.slp").click();
-    await vi.waitFor(() => expect(holds.componentAsked).toBe(true));
+    // The app started loading at boot; this open now waits on it, its own link already in hand.
+    expect(holds.componentAsked).toBe(true);
+    await vi.waitFor(() => expect(fetchMock.calls.some((c) => c.url.endsWith("/assets/a2/download/"))).toBe(true));
+    await settle();
     projectButton("sub-01/one.slp").click();
     holds.release("component");
     await vi.waitFor(() => expect(holds.componentLoaded).toBe(true));
     await settle();
-    expect(el("app-card").hidden).toBe(true);
+    expect(el("close-project-btn").hidden).toBe(true);
     expect(el("open-status").textContent).toBe("Opening sub-01/one.slp…");
 
     holds.release("a1");
@@ -193,7 +196,7 @@ describe("listings and opens that resolve out of order", () => {
     holds.release("a9");
     await settle();
     expect(el("open-status").textContent).toBe(listed);
-    expect(el("app-card").hidden).toBe(true);
+    expect(el("close-project-btn").hidden).toBe(true);
   });
 });
 

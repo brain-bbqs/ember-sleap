@@ -6,7 +6,9 @@ import {
   MOCK_MODELS,
   MOCK_PREDICTIONS_PATH,
   MOCK_PROJECT_PATH,
+  MOCK_VIDEO_PATHS,
   mockModelSource,
+  mockNewProjectRequest,
   mockProjectRequest,
   mockProjectUrl,
   readTestInjection,
@@ -20,28 +22,38 @@ describe("readTestInjection", () => {
     },
   );
 
+  const none = { mockProject: false, mockPredictions: false, mockPredictionsMissing: false, mockNewProject: false };
+
   it("is a no-op plan for a bare ?test", () => {
-    expect(readTestInjection("?test")).toEqual({
-      mockProject: false,
-      mockPredictions: false,
-      mockPredictionsMissing: false,
-    });
+    expect(readTestInjection("?test")).toEqual(none);
   });
 
   it.each([
-    ["?test&mock_project", { mockProject: true, mockPredictions: false, mockPredictionsMissing: false }],
-    ["?mock_project&test", { mockProject: true, mockPredictions: false, mockPredictionsMissing: false }],
-    [
-      "?test&mock_project&mock_predictions",
-      { mockProject: true, mockPredictions: true, mockPredictionsMissing: false },
-    ],
-    ["?test&mock_predictions", { mockProject: false, mockPredictions: true, mockPredictionsMissing: false }],
+    ["?test&mock_project", { ...none, mockProject: true }],
+    ["?mock_project&test", { ...none, mockProject: true }],
+    ["?test&mock_project&mock_predictions", { ...none, mockProject: true, mockPredictions: true }],
+    ["?test&mock_predictions", { ...none, mockPredictions: true }],
     [
       "?test&mock_project&mock_predictions&mock_predictions_missing",
-      { mockProject: true, mockPredictions: true, mockPredictionsMissing: true },
+      { ...none, mockProject: true, mockPredictions: true, mockPredictionsMissing: true },
     ],
+    ["?test&mock_new_project", { ...none, mockNewProject: true }],
   ])("reads the flags in %s", (search, plan) => {
     expect(readTestInjection(search)).toEqual(plan);
+  });
+});
+
+describe("mockNewProjectRequest", () => {
+  it("is a recognizably fake new project on two videos, belonging where its first one is", () => {
+    const request = mockNewProjectRequest();
+    expect(request.name).toBe("Untitled.slp");
+    expect(request.videos.map((v) => v.storedPath)).toEqual(MOCK_VIDEO_PATHS);
+    expect(request.videos.every((v) => v.fileType === "mp4" && v.url.startsWith("data:"))).toBe(true);
+    expect(request.videos.map((v) => v.name)).toEqual([
+      "sub-mock_test-injection-mock-video-1.mp4",
+      "sub-mock_test-injection-mock-video-2.mp4",
+    ]);
+    expect(fromHostRef(request.ref)).toEqual({ dandisetId: MOCK_DANDISET_ID, path: MOCK_VIDEO_PATHS[0] });
   });
 });
 

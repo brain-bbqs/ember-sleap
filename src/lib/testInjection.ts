@@ -10,7 +10,7 @@
 import { predictionsPath } from "./bidsDerivatives";
 import { toHostRef } from "./hostRef";
 import type { ModelSource } from "./modelCatalogue";
-import type { ModelCard, ModelFile, OpenRequest } from "./sleapContract";
+import type { ModelCard, ModelFile, NewProjectRequest, OpenRequest } from "./sleapContract";
 
 export interface TestInjection {
   /** Opens a synthesized project into the embedded app, with in-memory saves, two fixed models
@@ -22,6 +22,9 @@ export interface TestInjection {
   /** With `mockProject`: opening listed predictions finds nothing there, as when a worker has not
    * written them yet. */
   mockPredictionsMissing: boolean;
+  /** Starts a new project on two synthesized videos, as choosing a dandiset with no SLEAP project
+   * does, with the same in-memory saves, models and compute stub as `mockProject`. */
+  mockNewProject: boolean;
 }
 
 export function readTestInjection(search: string): TestInjection | null {
@@ -31,6 +34,7 @@ export function readTestInjection(search: string): TestInjection | null {
     mockProject: params.has("mock_project"),
     mockPredictions: params.has("mock_predictions"),
     mockPredictionsMissing: params.has("mock_predictions_missing"),
+    mockNewProject: params.has("mock_new_project"),
   };
 }
 
@@ -60,6 +64,29 @@ export function mockProjectRequest(): OpenRequest {
     fileType: "slp",
     name: "test-injection-mock-project.slp",
     ref: toHostRef({ dandisetId: MOCK_DANDISET_ID, path: MOCK_PROJECT_PATH }),
+  };
+}
+
+/** Where the new project `?test&mock_new_project` starts has its videos, by the paths it records. */
+export const MOCK_VIDEO_PATHS = [
+  "sub-mock/beh/sub-mock_test-injection-mock-video-1.mp4",
+  "sub-mock/beh/sub-mock_test-injection-mock-video-2.mp4",
+] as const;
+
+/**
+ * The new project `?test&mock_new_project` starts. Its videos are empty `data:` URLs that no player
+ * can show, so the canvas looks the same on every run; nothing fetches them.
+ */
+export function mockNewProjectRequest(): NewProjectRequest {
+  return {
+    name: "Untitled.slp",
+    videos: MOCK_VIDEO_PATHS.map((path) => ({
+      url: `data:video/mp4;base64,#${encodeURIComponent(path)}`,
+      fileType: "mp4" as const,
+      name: path.slice(path.lastIndexOf("/") + 1),
+      storedPath: path,
+    })),
+    ref: toHostRef({ dandisetId: MOCK_DANDISET_ID, path: MOCK_VIDEO_PATHS[0] }),
   };
 }
 

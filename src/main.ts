@@ -15,15 +15,13 @@ import {
   bindAccountMenu,
   createHumanSubjectsGate,
   initThemeToggle,
-  initWhatsNew,
   refreshIdentity,
   renderAuthState,
   renderVersion,
 } from "@brain-bbqs/ui";
-import changelog from "../CHANGELOG.md?raw";
 import { COMPUTE_PROXY_URL, createProxyComputeClient, type ComputeClient } from "./lib/computeClient";
 import { createStubCompute } from "./lib/computeStub";
-import { fetchDandiset, listOwnDandisets, listProjects, type ProjectAsset } from "./lib/emberAssets";
+import { fetchDandiset, listOwnDandisets, listProjects, listVideos, type ProjectAsset } from "./lib/emberAssets";
 import { createEmberStorage, type PathOpener, type ProjectStorage, type SavedFile } from "./lib/emberStorage";
 import type { SaveStage } from "./lib/emberUpload";
 import { createHashPool } from "./lib/etagPool";
@@ -39,12 +37,15 @@ import { settingsStore, STORAGE_KEY, THEME_KEY } from "./lib/settings";
 import {
   EMBEDDED_PAGE_EFFECTS,
   type HostRef,
+  type NewProjectRequest,
   type OpenRequest,
+  type ProjectIntent,
   type SleapAppHandle,
   type TrackJobSpec,
 } from "./lib/sleapContract";
 import {
   mockModelSource,
+  mockNewProjectRequest,
   mockProjectRequest,
   MOCK_DANDISET_ID,
   MOCK_MODELS,
@@ -56,19 +57,18 @@ import { createEntitiesPrompt } from "./ui/entitiesDialog";
 import { createOverwritePrompt } from "./ui/overwriteDialog";
 import { createPredictionsList } from "./ui/predictionsList";
 import { renderProjects } from "./ui/projectList";
-import { loadSleapComponent, type SleapComponent } from "./ui/sleapComponent";
+import { loadSleapComponent } from "./ui/sleapComponent";
 
 const shell = getShell();
 const els = getElements();
 
 // ---------------------------------------------------------------------------------------------
-// The shared shell: the footer version stamp, the "What's New" modal and the light/dark toggle.
-// Every BBQS companion app carries these three, wired the same way; what follows them is the app.
+// The shared shell: the version stamp and the light/dark toggle, wired as every BBQS companion app
+// wires them. Below its header this page is the SLEAP app's, so it carries no footer and no
+// "What's New"; what follows is the app.
 // ---------------------------------------------------------------------------------------------
 
 renderVersion(shell.versionIndicator, __APP_VERSION__);
-
-initWhatsNew(els.whatsNew, { changelog });
 
 // The inline script in index.html already applied any stored theme override before first paint,
 // so the toggle only has to flip and persist it, under the key that script reads.
@@ -90,6 +90,8 @@ const FLAG_UNREAD =
 
 const account = shell.account!;
 const injection = readTestInjection(window.location.search);
+// Either mock state runs offline: in-memory saves, fixed models and the compute stub.
+const mocked = !!(injection?.mockProject || injection?.mockNewProject);
 const oauth = createOAuth();
 let tokens: OAuthTokenSet | null = null;
 // One refresh per token set however many calls need it: EMBER rotates refresh tokens, so a second
@@ -109,8 +111,13 @@ let openSeq = 0;
 // landed. Saves are reported one at a time (see withSaveReporting), so this is always that save's.
 const saveWarnings: string[] = [];
 let reporting: Promise<unknown> = Promise.resolve();
-let component: SleapComponent | null = null;
+// What saves record as the SLEAP version: the component's, once it has loaded.
+let sleapVersion = "unknown";
 let app: SleapAppHandle | null = null;
+// The app's mount, once it has started: at boot, and again each time a project is closed.
+let mounting: Promise<SleapAppHandle> | null = null;
+// What the project picker was opened for: New Project… or Open Project… in the app.
+let pickerIntent: ProjectIntent = "open";
 
 function say(target: HTMLElement, text: string, tone?: "ok" | "err"): void {
   target.textContent = text;
@@ -203,7 +210,7 @@ const ember = createEmberStorage({
   askEntities: createEntitiesPrompt(els.entities),
   askOverwrite: createOverwritePrompt(els.overwrite),
   saveRefusal,
-  versions: () => ({ app: __APP_VERSION__, sleap: component?.version ?? "unknown" }),
+  versions: () => ({ app: __APP_VERSION__, sleap: sleapVersion }),
   hash: hashPool.hash,
   onProgress: (stage, fraction) => say(els.hostStatus, `${SAVE_STAGES[stage]} ${Math.round(fraction * 100)}%`),
   onWarning: (message) => {
@@ -213,7 +220,7 @@ const ember = createEmberStorage({
 });
 
 function pageStorage(): ProjectStorage & PathOpener {
-  if (!injection?.mockProject) return ember;
+  if (!mocked) return ember;
   const memory = createMemoryStorage({ unwritten: injection.mockPredictionsMissing });
   const shown = (saved: SavedFile) => {
     say(els.hostStatus, `Saved in memory (test injection): ${fromHostRef(saved.ref)?.path}`, "ok");
@@ -232,7 +239,7 @@ function pageStorage(): ProjectStorage & PathOpener {
  * up on another's line.
  */
 function withSaveReporting(storage: ProjectStorage): ProjectStorage {
-  if (injection?.mockProject) return storage;
+  if (mocked) return storage;
   async function report(what: string, ref: HostRef | undefined, write: () => Promise<SavedFile>): Promise<SavedFile> {
     saveWarnings.length = 0;
     try {
@@ -266,19 +273,19 @@ function withSaveReporting(storage: ProjectStorage): ProjectStorage {
 
 /** Where jobs run, and, while that is the stub, the models it trained, listed as EMBER would list them. */
 function pageCompute(): { client: ComputeClient; trained: ModelSource[] } {
-  if (COMPUTE_PROXY_URL && !injection?.mockProject) {
+  if (COMPUTE_PROXY_URL && !mocked) {
     const client = createProxyComputeClient({
       baseUrl: COMPUTE_PROXY_URL,
       getToken: async () => (await configFor("")).accessToken || null,
     });
     return { client, trained: [] };
   }
-  const stub = createStubCompute(injection?.mockProject ? { tickMs: 150 } : {});
+  const stub = createStubCompute(mocked ? { tickMs: 150 } : {});
   return { client: stub, trained: [stub.models] };
 }
 
 function modelSources(trained: ModelSource[]): ModelSource[] {
-  if (injection?.mockProject) return [mockModelSource, ...trained];
+  if (mocked) return [mockModelSource, ...trained];
   const sources: ModelSource[] = [];
   if (MODEL_INDEX_URL) sources.push(createIndexSource({ url: MODEL_INDEX_URL }));
   sources.push(
@@ -302,9 +309,12 @@ const host = createSleapHost({
   onModelWarning: (source, e) => console.warn(`Could not list models from ${source}:`, e),
   // Closing the project forgets its jobs (see the close handler), so every report is the open app's.
   onPredictions: (_jobId, files) => predictions.add(files),
+  chooseProject: (intent) => showPicker(intent),
 });
 
-/** The line under the project's title saying where it is. */
+const NO_PROJECT = "No project open";
+
+/** The bar's line saying where a project is. */
 function locationLine({ dandisetId, path }: EmberLocation): string {
   return `${dandisetId === MOCK_DANDISET_ID ? "Test injection" : `Dandiset ${dandisetId}`} · ${path}`;
 }
@@ -315,33 +325,95 @@ async function recheckGate(dandisetId: string): Promise<void> {
   if (dandisetId === listedDandisetId) renderGate(dandisetId, flagged);
 }
 
-async function openProject(request: OpenRequest, location: string, isCurrent = () => true): Promise<void> {
-  component ??= await loadSleapComponent();
-  if (!isCurrent()) return;
-  app ??= component.mountSleapApp(els.sleapRoot, {
-    assetBaseUrl: new URL("sleap-assets/", document.baseURI).href,
-    compute: { builtIn: false },
-    pageEffects: EMBEDDED_PAGE_EFFECTS,
-    host,
+/** The app, mounted with nothing open (its start screen) at boot and again after a project closes. */
+function ensureApp(): Promise<SleapAppHandle> {
+  mounting ??= loadSleapComponent().then((loaded) => {
+    sleapVersion = loaded.version;
+    app = loaded.mountSleapApp(els.sleapRoot, {
+      assetBaseUrl: new URL("sleap-assets/", document.baseURI).href,
+      compute: { builtIn: false },
+      pageEffects: EMBEDDED_PAGE_EFFECTS,
+      host,
+    });
+    return app;
   });
-  host.remember(request);
-  els.projectTitle.textContent = request.name;
-  els.projectLocation.textContent = location;
-  say(els.hostStatus, "");
-  els.openCard.hidden = true;
-  els.appCard.hidden = false;
-  await app.open(request);
+  return mounting;
 }
 
+function showInBar(title: string, location: string): void {
+  els.projectTitle.textContent = title;
+  els.projectLocation.textContent = location;
+  els.closeProjectBtn.hidden = false;
+  say(els.hostStatus, "");
+}
+
+async function openProject(request: OpenRequest, location: string, isCurrent = () => true): Promise<void> {
+  const handle = await ensureApp();
+  if (!isCurrent()) return;
+  host.remember(request);
+  showInBar(request.name, location);
+  closePicker();
+  await handle.open(request);
+}
+
+/** Hands the app a new project as the page's own: the host follows its saves and jobs. */
+function createProject(handle: SleapAppHandle, request: NewProjectRequest, location: string): Promise<void> {
+  host.rememberNew(request);
+  showInBar(request.name, location);
+  closePicker();
+  return handle.create(request);
+}
+
+const DISCARD_FOR_OPEN = "The open project has unsaved changes. Open another project without saving them?";
+const DISCARD_FOR_NEW = "The open project has unsaved changes. Start a new project without saving them?";
+
 async function openFromEmber(dandisetId: string, project: ProjectAsset): Promise<void> {
+  // Bumped before asking, so a "no" also stops an earlier open, which would drop the same edits.
   const seq = ++openSeq;
   const isCurrent = () => seq === openSeq;
+  const askedFirst = hasEdits();
+  if (askedFirst && !window.confirm(DISCARD_FOR_OPEN)) return;
   say(els.openStatus, `Opening ${project.path}…`);
   try {
     const request = await ember.open(dandisetId, project);
     if (!isCurrent()) return;
+    // Edits made while it loaded are the person's too.
+    if (!askedFirst && !confirmDiscard(DISCARD_FOR_OPEN)) return say(els.openStatus, "");
     await openProject(request, locationLine({ dandisetId, path: project.path }), isCurrent);
     if (isCurrent()) say(els.openStatus, "");
+  } catch (e) {
+    if (isCurrent()) say(els.openStatus, friendlyError(e, MESSAGES), "err");
+  }
+}
+
+function videoCount(n: number): string {
+  return n === 1 ? "1 video" : `${n} videos`;
+}
+
+/**
+ * Starts a new project on a dandiset's videos, as choosing a dandiset with no SLEAP project does,
+ * and New Project… always does. `note` is what the person should still hear about the dandiset.
+ */
+async function startProject(dandisetId: string, videos: ProjectAsset[], note = ""): Promise<void> {
+  const seq = ++openSeq;
+  const isCurrent = () => seq === openSeq;
+  const askedFirst = hasEdits();
+  if (askedFirst && !window.confirm(DISCARD_FOR_NEW)) return;
+  const count = videoCount(videos.length);
+  say(els.openStatus, `Starting a new project on ${count}…`);
+  try {
+    const request = await ember.startProject(dandisetId, videos);
+    const handle = await ensureApp();
+    if (!isCurrent()) return;
+    // Edits made while it loaded are the person's too.
+    if (!askedFirst && !confirmDiscard(DISCARD_FOR_NEW)) return say(els.openStatus, "");
+    await createProject(handle, request, `Dandiset ${dandisetId} · new project on ${count}`);
+    say(els.openStatus, "");
+    say(
+      els.hostStatus,
+      `New project on ${count} from dandiset ${dandisetId}: saving writes it into derivatives/sleap/.${note}`,
+      note ? "err" : undefined,
+    );
   } catch (e) {
     if (isCurrent()) say(els.openStatus, friendlyError(e, MESSAGES), "err");
   }
@@ -372,40 +444,98 @@ async function openPredictions(file: EmberLocation): Promise<void> {
   }
 }
 
+const PICKER: Record<ProjectIntent, { title: string; intro: string; submit: string }> = {
+  open: {
+    title: "Open a project from EMBER",
+    intro:
+      "Choose a dandiset to list its SLEAP projects. A dandiset with none yet starts a new project from its videos.",
+    submit: "List projects",
+  },
+  new: {
+    title: "New project on EMBER",
+    intro: "Choose a dandiset: the new project starts from its videos and is saved into its derivatives/sleap/ folder.",
+    submit: "Start project",
+  },
+};
+
+/** The project picker, for the app's New Project… or Open Project…. */
+function showPicker(intent: ProjectIntent): void {
+  pickerIntent = intent;
+  // A listing still on its way was for the picker as it was before.
+  listingSeq++;
+  const text = PICKER[intent];
+  els.openDialog.title.textContent = text.title;
+  els.openDialog.intro.textContent = text.intro;
+  els.listProjectsBtn.textContent = text.submit;
+  els.projectList.hidden = true;
+  els.newProjectBtn.hidden = true;
+  say(els.openStatus, "");
+  if (!els.openDialog.dialog.open) els.openDialog.dialog.showModal();
+  els.dandisetInput.focus();
+}
+
+function closePicker(): void {
+  if (els.openDialog.dialog.open) els.openDialog.dialog.close();
+}
+
+/** The person closed the picker: what it was still listing, opening or starting stops. */
+function cancelPicker(): void {
+  listingSeq++;
+  openSeq++;
+  closePicker();
+}
+
 async function listDandiset(raw: string): Promise<void> {
   // A new listing also drops an open still on its way from the list it replaces.
   const seq = ++listingSeq;
   openSeq++;
+  const intent = pickerIntent;
   const dandisetId = extractDandisetId(raw);
   if (!dandisetId) return say(els.openStatus, "Enter a dandiset id, such as 000398.", "err");
   saveDandisetId(dandisetId);
   els.projectList.hidden = true;
-  say(els.openStatus, `Listing the projects in dandiset ${dandisetId}…`);
+  els.newProjectBtn.hidden = true;
+  say(
+    els.openStatus,
+    intent === "new"
+      ? `Finding the videos in dandiset ${dandisetId}…`
+      : `Listing the projects in dandiset ${dandisetId}…`,
+  );
   try {
     const cfg = await configFor(dandisetId);
     // The flag is read with the listing, so the notice and the list always describe the same dandiset.
-    const [summary, projects, flagged] = await Promise.all([
+    const [summary, projects, videos, flagged] = await Promise.all([
       fetchDandiset(cfg),
       listProjects(cfg),
+      listVideos(cfg),
       readHumanSubjects(cfg),
     ]);
     if (seq !== listingSeq) return;
     listedDandisetId = dandisetId;
     renderGate(dandisetId, flagged);
-    renderProjects(els.projectList, projects, (project) => void openFromEmber(dandisetId, project));
     const name = summary.title ? `${summary.title} (${dandisetId})` : `Dandiset ${dandisetId}`;
     const embargo = summary.embargoed ? ", embargoed" : "";
-    const count = projects.length === 1 ? "1 project" : `${projects.length} projects`;
-    const listed = projects.length ? `${name}${embargo}: ${count}.` : `${name}${embargo} holds no SLEAP projects.`;
-    if (flagged === null) {
-      say(
-        els.openStatus,
-        `${listed} Could not check its human-subjects flag: each save tries again, and is refused until a check succeeds.`,
-        "err",
-      );
-    } else {
-      say(els.openStatus, listed);
+    const unchecked =
+      flagged === null
+        ? " Could not check its human-subjects flag: each save tries again, and is refused until a check succeeds."
+        : "";
+    if (intent === "new" || projects.length === 0) {
+      if (videos.length === 0) {
+        const none =
+          intent === "new"
+            ? `${name}${embargo} holds no videos to start a project from.`
+            : `${name}${embargo} holds no SLEAP projects, and no videos to start one from.`;
+        return say(els.openStatus, `${none}${unchecked}`, "err");
+      }
+      // Choosing a dandiset with no project yet is choosing to start one.
+      return void startProject(dandisetId, videos, unchecked);
     }
+    renderProjects(els.projectList, projects, (project) => void openFromEmber(dandisetId, project));
+    els.newProjectBtn.onclick = () => void startProject(dandisetId, videos);
+    els.newProjectBtn.textContent = `Start a new project from its ${videoCount(videos.length)}`;
+    els.newProjectBtn.hidden = videos.length === 0;
+    const count = projects.length === 1 ? "1 project" : `${projects.length} projects`;
+    say(els.openStatus, `${name}${embargo}: ${count}.${unchecked}`, flagged === null ? "err" : undefined);
   } catch (e) {
     if (seq === listingSeq) say(els.openStatus, friendlyError(e, MESSAGES), "err");
   }
@@ -486,18 +616,29 @@ els.openForm.addEventListener("submit", (e) => {
   void listDandiset(els.dandisetInput.value);
 });
 
+els.openDialog.close.addEventListener("click", cancelPicker);
+// Escape closes a modal dialog by itself; what the picker was doing stops with it.
+els.openDialog.dialog.addEventListener("cancel", () => {
+  listingSeq++;
+  openSeq++;
+});
+
 els.closeProjectBtn.addEventListener("click", () => {
   if (!confirmDiscard("Close the project without saving your changes?")) return;
-  // Predictions still opening would otherwise bring the card back once they arrive, and a job of
+  // Predictions still opening would otherwise bring the project back once they arrive, and a job of
   // this project's would list its predictions under the next one.
   openSeq++;
   host.forgetJobs();
   predictions.clear();
   app?.unmount();
   app = null;
-  els.appCard.hidden = true;
-  els.openCard.hidden = false;
-  els.dandisetInput.focus();
+  mounting = null;
+  els.projectTitle.textContent = "";
+  els.projectLocation.textContent = NO_PROJECT;
+  els.closeProjectBtn.hidden = true;
+  say(els.hostStatus, "");
+  // Back to the app's start screen, as SLEAP shows with nothing open.
+  void ensureApp();
 });
 
 // The embedded app is mounted with its own beforeunload turned off, so the page asks instead.
@@ -519,6 +660,15 @@ if (injection?.mockProject) {
       .then(() => host.submitJob(spec, mock.ref))
       .then(({ jobId }) => host.subscribeJob(jobId, () => undefined));
   }
-} else if (params.has("dandiset")) {
-  void listDandiset(els.dandisetInput.value);
+} else if (injection?.mockNewProject) {
+  const mock = mockNewProjectRequest();
+  void ensureApp().then((handle) =>
+    createProject(handle, mock, `Test injection · new project on ${videoCount(mock.videos.length)}`),
+  );
+} else {
+  void ensureApp();
+  if (params.has("dandiset")) {
+    showPicker("open");
+    void listDandiset(els.dandisetInput.value);
+  }
 }

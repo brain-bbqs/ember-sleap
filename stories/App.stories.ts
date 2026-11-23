@@ -9,10 +9,13 @@ interface AppStoryOptions {
   listed?: boolean;
 }
 
-// Mirrors what main.ts renders once a dandiset's projects are listed (see listDandiset and
-// renderProjects there). Storybook runs none of the app's script, so the story fills in the same
-// elements by hand.
+// Mirrors what main.ts renders once a dandiset's projects are listed in the project picker (see
+// showPicker, listDandiset and renderProjects there). Storybook runs none of the app's script, so
+// the story opens the picker and fills in the same elements by hand.
 function applyListed(wrapper: HTMLElement): void {
+  wrapper.querySelector("#open-dialog")?.setAttribute("open", "");
+  const title = wrapper.querySelector("#open-dialog-title");
+  if (title) title.textContent = "Open a project from EMBER";
   const input = wrapper.querySelector<HTMLInputElement>("#dandiset-input");
   if (input) input.value = "000398";
   const status = wrapper.querySelector("#open-status");
@@ -36,6 +39,11 @@ function applyListed(wrapper: HTMLElement): void {
     list.append(item);
   }
   list.hidden = false;
+  const startNew = wrapper.querySelector<HTMLButtonElement>("#new-project-btn");
+  if (startNew) {
+    startNew.textContent = "Start a new project from its 2 videos";
+    startNew.hidden = false;
+  }
 }
 
 function buildApp({ listed = false }: AppStoryOptions = {}): HTMLElement {
@@ -45,7 +53,7 @@ function buildApp({ listed = false }: AppStoryOptions = {}): HTMLElement {
   doc.body.querySelectorAll("script").forEach((s) => s.remove());
   const wrapper = document.createElement("div");
   wrapper.innerHTML = doc.body.innerHTML;
-  // Mirrors the one line of main.ts that runs before anything is loaded; without it the footer's
+  // Mirrors the one line of main.ts that runs before anything is loaded; without it the EMBER bar's
   // version link would render as an empty (invisible) anchor in the snapshots.
   const version = wrapper.querySelector("#version-indicator");
   if (version) version.textContent = `v${__APP_VERSION__}`;

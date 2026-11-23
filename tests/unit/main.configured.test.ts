@@ -8,6 +8,7 @@ import { beforeAll, describe, expect, it, vi } from "vitest";
 import type { JobRequest } from "../../src/lib/computeClient";
 import type { EmberStorageOptions } from "../../src/lib/emberStorage";
 import { STORAGE_KEY } from "../../src/lib/settings";
+import { STAND_IN_VERSION } from "../../src/ui/sleapStandIn";
 import { bootMain, el, role } from "./helpers/mainHarness";
 
 const fakes = vi.hoisted(() => {
@@ -143,8 +144,8 @@ describe("main.ts once sign-in, compute and the model index are configured", () 
     expect(fakes.oauth.startLogin).toHaveBeenCalled();
   });
 
-  it("reports the SLEAP version as unknown until the app has loaded", () => {
-    expect(fakes.storageOptions!.versions().sleap).toBe("unknown");
+  it("records the version of the SLEAP app it mounted at boot in what it saves", async () => {
+    await vi.waitFor(() => expect(fakes.storageOptions!.versions().sleap).toBe(STAND_IN_VERSION));
   });
 
   it("reports a project that fails to open, and opens it on a second try", async () => {

@@ -1,19 +1,15 @@
 // @vitest-environment jsdom
 // Boots the real src/main.ts against the real index.html markup with every network call failing,
-// and drives the shell end to end (version stamp, theme toggle, What's New modal) and the picker's
-// signed-out, offline behaviour. Besides covering main.ts's wiring, this guards the
+// and drives the shell end to end (version stamp, theme toggle), the SLEAP app's start screen, and
+// the project picker's signed-out, offline behaviour. Besides covering main.ts's wiring, this guards the
 // index.html/elements.ts id contract: getShell() and getElements() throw on import if any
 // registered id is missing from the page.
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
 import { throwingStorage, type FetchRouter } from "@brain-bbqs/test-utils/vitest";
-import { countChangelogVersions } from "@brain-bbqs/ui";
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import { OAUTH_CLIENT_ID } from "../../src/lib/oauth";
 import { STORAGE_KEY, THEME_KEY } from "../../src/lib/settings";
-import { bootMain, el } from "./helpers/mainHarness";
+import { bootMain, el, role } from "./helpers/mainHarness";
 
-const WHATS_NEW_RECENT_VERSIONS = 3;
 let fetchMock: FetchRouter;
 
 // The real PKCE client, with the browser navigation it ends in recorded instead (jsdom has none).
@@ -31,6 +27,8 @@ vi.mock("../../src/lib/oauth", async (importOriginal) => {
 
 beforeAll(async () => {
   fetchMock = (await bootMain()).fetch!;
+  // The app mounts at boot, once its component has loaded.
+  await vi.waitFor(() => role("start"));
 });
 
 function submitDandiset(value: string): void {
@@ -39,17 +37,39 @@ function submitDandiset(value: string): void {
 }
 
 describe("main.ts boot", () => {
-  it("stamps the version into the footer link", () => {
+  it("stamps the version into the EMBER bar's link", () => {
     expect(el("version-indicator").textContent).toMatch(/^v\d+\.\d+\.\d+$/);
   });
 
-  it("opens on the EMBER picker, signed out, with nothing mounted", () => {
-    expect(el("open-card").hidden).toBe(false);
-    expect(el("app-card").hidden).toBe(true);
-    expect(el("sleap-root").children.length).toBe(0);
+  it("opens on the SLEAP app's start screen, signed out, with no project open and no picker shown", () => {
+    expect(role("start").hidden).toBe(false);
+    expect(role("project").hidden).toBe(true);
+    expect(el("sleap-root").querySelectorAll(".sleap-app")).toHaveLength(1);
+    expect(el<HTMLDialogElement>("open-dialog").open).toBe(false);
+    expect(el("project-location").textContent).toBe("No project open");
+    expect(el("close-project-btn").hidden).toBe(true);
     expect(el("oauthSigninBtn").hidden).toBe(false);
     expect(el("oauthSignedIn").hidden).toBe(true);
     expect(el<HTMLInputElement>("dandiset-input").value).toBe("");
+  });
+
+  it("opens the picker for New Project… from the File menu, and closes it from its close button", () => {
+    role("menu-file").click();
+    role("menu-new").click();
+    const dialog = el<HTMLDialogElement>("open-dialog");
+    expect(dialog.open).toBe(true);
+    expect(el("open-dialog-title").textContent).toBe("New project on EMBER");
+    expect(el("list-projects-btn").textContent).toBe("Start project");
+    expect(document.activeElement).toBe(el("dandiset-input"));
+    el("open-dialog-close").click();
+    expect(dialog.open).toBe(false);
+  });
+
+  it("opens the picker for Open Project from the start screen", () => {
+    role("start-open").click();
+    expect(el<HTMLDialogElement>("open-dialog").open).toBe(true);
+    expect(el("open-dialog-title").textContent).toBe("Open a project from EMBER");
+    expect(el("list-projects-btn").textContent).toBe("List projects");
   });
 
   it("sends sign-in to EMBER's authorize page as ember-sleap, to come back to this page", async () => {
@@ -100,20 +120,16 @@ describe("main.ts boot", () => {
     }
   });
 
-  it("renders the changelog into the What's New modal", () => {
-    const changelog = readFileSync(resolve(process.cwd(), "CHANGELOG.md"), "utf-8");
-    const rendered = el("whats-new-content").querySelectorAll(".changelog-version");
-    expect(rendered.length).toBe(Math.min(countChangelogVersions(changelog), WHATS_NEW_RECENT_VERSIONS));
+  it("carries no footer and no What's New, since below its header the page is the SLEAP app", () => {
+    expect(document.querySelector(".page-footer-bar")).toBeNull();
+    expect(document.getElementById("whats-new-modal")).toBeNull();
   });
 
-  it("opens and closes the modal from the footer, tracking the #changelog fragment", async () => {
-    const modal = el<HTMLDialogElement>("whats-new-modal");
-    el("whats-new-button").click();
-    expect(modal.open).toBe(true);
-    expect(window.location.hash).toBe("#changelog");
-    el("whats-new-close").click();
-    expect(modal.open).toBe(false);
-    await vi.waitFor(() => expect(window.location.hash).toBe(""));
+  it("revokes nothing on a sign-out with no account signed in", () => {
+    const before = fetchMock.calls.length;
+    el("oauthSignoutBtn").click();
+    expect(el("oauthSigninBtn").hidden).toBe(false);
+    expect(fetchMock.calls.slice(before).some((c) => c.url.includes("/oauth/revoke_token/"))).toBe(false);
   });
 
   it("lets the page unload freely with nothing open", () => {

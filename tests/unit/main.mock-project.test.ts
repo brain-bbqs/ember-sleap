@@ -25,8 +25,9 @@ afterEach(() => vi.restoreAllMocks());
 
 describe("?test&mock_project", () => {
   it("opens the mock project in the embedded app, leaving the page's title alone", () => {
-    expect(el("open-card").hidden).toBe(true);
-    expect(el("app-card").hidden).toBe(false);
+    expect(el<HTMLDialogElement>("open-dialog").open).toBe(false);
+    expect(role("project").hidden).toBe(false);
+    expect(el("close-project-btn").hidden).toBe(false);
     expect(el("project-title").textContent).toBe("test-injection-mock-project.slp");
     expect(el("project-location").textContent).toBe(`Test injection · ${MOCK_PROJECT_PATH}`);
     expect(document.title).toBe("EMBER SLEAP");
@@ -117,14 +118,20 @@ describe("?test&mock_project", () => {
     const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
     el("close-project-btn").click();
     expect(confirm).toHaveBeenCalledWith("Close the project without saving your changes?");
-    expect(el("app-card").hidden).toBe(false);
+    expect(el("close-project-btn").hidden).toBe(false);
 
     confirm.mockReturnValue(true);
     el("close-project-btn").click();
-    expect(el("app-card").hidden).toBe(true);
-    expect(el("open-card").hidden).toBe(false);
-    expect(el("sleap-root").children.length).toBe(0);
+    expect(el("close-project-btn").hidden).toBe(true);
+    expect(el("project-title").textContent).toBe("");
+    expect(el("project-location").textContent).toBe("No project open");
     expect(el("predictions").hidden).toBe(true);
     expect(el("predictions-list").children.length).toBe(0);
+  });
+
+  it("comes back to the SLEAP app's start screen once the project is closed", async () => {
+    await vi.waitFor(() => expect(role("start").hidden).toBe(false));
+    expect(el("sleap-root").querySelectorAll(".sleap-app")).toHaveLength(1);
+    expect(role("project").hidden).toBe(true);
   });
 });

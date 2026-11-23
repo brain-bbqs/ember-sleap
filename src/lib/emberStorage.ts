@@ -29,7 +29,7 @@ import { putAsset, type SaveStage } from "./emberUpload";
 import type { EtagHasher } from "./etagPool";
 import { baseName, fileTypeOfPath, isProjectType, projectTypeOf } from "./fileType";
 import { fromHostRef, toHostRef, type EmberLocation } from "./hostRef";
-import type { FileType, HostRef, OpenRequest, ResolvedFile } from "./sleapContract";
+import type { FileType, HostRef, NewProjectRequest, OpenRequest, ProjectVideo, ResolvedFile } from "./sleapContract";
 
 /** What a save wrote: the ref the app keeps for it, and the file, by a link this storage can renew and describe. */
 export interface SavedFile {
@@ -64,7 +64,19 @@ export interface PathOpener {
 export interface EmberStorage extends ProjectStorage, PathOpener {
   /** A listed project, resolved to what the app's `open` takes. */
   open(dandisetId: string, project: ProjectAsset): Promise<OpenRequest>;
+  /**
+   * A new project on listed videos, as the app's `create` takes it: each video by a link this
+   * storage can renew and describe, recorded by its path in the dandiset. The project belongs where
+   * its first video is, so its first save lands in that video's subject (and session) folder.
+   */
+  startProject(dandisetId: string, videos: ProjectAsset[]): Promise<NewProjectRequest>;
 }
+
+/** What a new project is called until its first save names it after its first video. */
+export const NEW_PROJECT_NAME = "Untitled.slp";
+
+/** How many video links a new project resolves at once. */
+const VIDEO_LINKS_AT_ONCE = 4;
 
 /** Why a file a job reported does not open: nothing is at its path, which a worker may still be writing. */
 export function notOnEmberYet(path: string): string {
@@ -259,6 +271,27 @@ export function createEmberStorage(options: EmberStorageOptions): EmberStorage {
   return {
     async open(dandisetId, project) {
       return opened(await config(dandisetId), dandisetId, project, project.fileType);
+    },
+
+    async startProject(dandisetId, videos) {
+      if (videos.length === 0) throw new Error(`Dandiset ${dandisetId} holds no videos to start a project from.`);
+      const cfg = await config(dandisetId);
+      const resolved: ProjectVideo[] = new Array<ProjectVideo>(videos.length);
+      let next = 0;
+      async function worker(): Promise<void> {
+        while (next < videos.length) {
+          const i = next++;
+          const video = videos[i];
+          const url = await resolve(cfg, video);
+          resolved[i] = { url, fileType: video.fileType, name: baseName(video.path), storedPath: video.path };
+        }
+      }
+      await Promise.all(Array.from({ length: Math.min(VIDEO_LINKS_AT_ONCE, videos.length) }, worker));
+      return {
+        name: NEW_PROJECT_NAME,
+        videos: resolved,
+        ref: toHostRef({ dandisetId, path: videos[0].path }),
+      };
     },
 
     async openPath(dandisetId, path) {

@@ -105,7 +105,28 @@ export interface JobEvent {
 
 export type JobState = "queued" | "running" | "completed" | "failed" | "canceled";
 
+/** A video a new project starts with: where to read it, and the path the project file records for it. */
+export interface ProjectVideo extends ResolvedFile {
+  /** What `host.resolveVideo` is given to find the video again once the saved project is reopened. */
+  storedPath: string;
+}
+
+/** A project the app starts, unsaved; its first save goes to `host.save` with `ref`. */
+export interface NewProjectRequest {
+  name: string;
+  videos: ProjectVideo[];
+  ref?: HostRef;
+}
+
+export type ProjectIntent = "new" | "open";
+
 export interface SleapHost {
+  /**
+   * New Project… and Open Project… (the File menu and the start screen) go to the host rather than
+   * the browser's file pickers. The host shows its own picker and answers through the handle's
+   * `create` or `open`; without this callback the app picks local files as the standalone app does.
+   */
+  chooseProject?(intent: ProjectIntent): void;
   save?(file: Blob, name: string, ref?: HostRef): Promise<HostRef>;
   resolveVideo?(storedPath: string, project?: HostRef): Promise<ResolvedFile | null>;
   refreshUrl?(file: ResolvedFile): Promise<ResolvedFile>;
@@ -136,6 +157,8 @@ export type OpenRequest = ResolvedFile & { ref?: HostRef };
 
 export interface SleapAppHandle {
   open(file: OpenRequest): Promise<void>;
+  /** Starts a new project from the host's videos in place of whatever is open. */
+  create(request: NewProjectRequest): Promise<void>;
   isDirty(): boolean;
   unmount(): void;
 }

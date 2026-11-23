@@ -112,7 +112,8 @@ describe("a signed-in visitor on an embargoed, human-subjects dandiset", () => {
   it("opens a project through a presigned link and reads it by its declared type", async () => {
     el("project-list").querySelector<HTMLButtonElement>('[data-path="sub-01/ses-02/labels.slp"]')!.click();
     await vi.waitFor(() => expect(role("file-probe").textContent).toMatch(/HDF5 signature/));
-    expect(el("app-card").hidden).toBe(false);
+    expect(el("close-project-btn").hidden).toBe(false);
+    expect(el<HTMLDialogElement>("open-dialog").open).toBe(false);
     expect(el("project-location").textContent).toBe("Dandiset 000123 · sub-01/ses-02/labels.slp");
     expect(bearer(`${API}/assets/a1/download/`)).toBe("Bearer tok");
     // The app is handed the storage link, never the token.
