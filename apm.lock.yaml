@@ -328,7 +328,7 @@ deployments:
   owners:
   - .
   active_owner: .
-  content_hash: sha256:86e920415326f37f006c2e5fafbbe1939440787e91c64ead56f6c1f810caa617
+  content_hash: sha256:ff0404d6a183e69301357ab97ad1250a356a3e9e51c7b1069c888f518518bc51
 - kind: project-relative
   target: claude
   value: .claude/skills/reuse-license-setup
@@ -589,7 +589,7 @@ deployments:
   owners:
   - .
   active_owner: .
-  content_hash: sha256:86e920415326f37f006c2e5fafbbe1939440787e91c64ead56f6c1f810caa617
+  content_hash: sha256:ff0404d6a183e69301357ab97ad1250a356a3e9e51c7b1069c888f518518bc51
 - kind: project-relative
   target: legacy
   value: .agents/skills/reuse-license-setup
@@ -640,9 +640,9 @@ local_deployed_files:
 - .claude/skills/visual-snapshots
 - .claude/skills/visual-snapshots/SKILL.md
 local_deployed_file_hashes:
-  .agents/skills/frontend-security/SKILL.md: sha256:86e920415326f37f006c2e5fafbbe1939440787e91c64ead56f6c1f810caa617
+  .agents/skills/frontend-security/SKILL.md: sha256:ff0404d6a183e69301357ab97ad1250a356a3e9e51c7b1069c888f518518bc51
   .agents/skills/reuse-license-setup/SKILL.md: sha256:3fdddbca9f92cc18d88880861a6e4e60c38a3b2e7acbe33d87b41dd20e189d0c
   .agents/skills/visual-snapshots/SKILL.md: sha256:c43dafc731231ff5f8551428f7d045aa2fa15c6d1fcd18cc9e03d75215263b8d
-  .claude/skills/frontend-security/SKILL.md: sha256:86e920415326f37f006c2e5fafbbe1939440787e91c64ead56f6c1f810caa617
+  .claude/skills/frontend-security/SKILL.md: sha256:ff0404d6a183e69301357ab97ad1250a356a3e9e51c7b1069c888f518518bc51
   .claude/skills/reuse-license-setup/SKILL.md: sha256:3fdddbca9f92cc18d88880861a6e4e60c38a3b2e7acbe33d87b41dd20e189d0c
   .claude/skills/visual-snapshots/SKILL.md: sha256:c43dafc731231ff5f8551428f7d045aa2fa15c6d1fcd18cc9e03d75215263b8d
