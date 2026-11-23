@@ -1,8 +1,8 @@
-/* The shell every BBQS companion app shares comes from @brain-bbqs/ui: the theme tokens (light,
-   dark via the OS preference or the header toggle), the page defaults, the header and watermark,
-   the shared controls and the human-subjects notice. Below its header this page is the SLEAP app,
-   laid out and colored as the SLEAP web app is, so it skips the package's footer and "What's New"
-   and its dropzone. Set a token or knob (see that package's README) on :root below to change it.
+/* The shell every BBQS companion app shares comes from @brain-bbqs/ui: the theme tokens, the page
+   defaults, the header, watermark and footer bar, the shared controls and the human-subjects
+   notice. Between its header and footer this page is the SLEAP app, laid out and colored as the
+   SLEAP web app is, and like that app it is dark only (index.html pins data-theme="dark"), so it
+   skips the package's "What's New" and its dropzone. Set a token or knob (see that package's README) on :root below to change it.
    CSS allows @import only at the top, so every rule below follows the shared ones. */
 @import "@brain-bbqs/ui/styles/tokens.css";
 @import "@brain-bbqs/ui/styles/base.css";
@@ -10,6 +10,11 @@
 @import "@brain-bbqs/ui/styles/controls.css";
 @import "@brain-bbqs/ui/styles/dataset-picker.css";
 @import "@brain-bbqs/ui/styles/human-subjects.css";
+
+/* Native controls (scrollbars, form fields) drawn for the one theme the page has. */
+:root {
+  color-scheme: dark;
+}
 
 /* The SLEAP web app's own palette (talmolab/sleap-app, src/index.css), which it keeps in both
    themes: the app is dark whichever theme the page around it is in, so these are set once. */
@@ -57,47 +62,26 @@ main.workspace {
   margin: 0 auto 0.75rem;
 }
 
-/* The Talmo Lab lockup, flask over name, as clip-extractor and encoding-helper show it. */
-.talmo-brand {
-  display: inline-flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.1rem;
-  color: var(--muted);
-  text-decoration: none;
-  line-height: 1;
+/* The footer, a row of the page's column below the app rather than pinned over it, with the
+   version stamp bottom-left and the Talmo Lab and CON marks bottom-right at every width. Its marks
+   are sized down from the shared 5rem so the app keeps the height. */
+.workspace > .page-footer-bar {
+  --footer-brand-height: 2.75rem;
+  position: static;
+  flex: none;
+  flex-direction: row;
+  align-items: flex-end;
+  gap: 1rem;
+  padding: 0.3rem 0.75rem 0.25rem;
+  pointer-events: auto;
 }
 
-.talmo-logo {
-  width: 2rem;
+.workspace > .page-footer-bar .footer-left {
+  align-items: flex-start;
+}
+
+.workspace > .page-footer-bar .footer-brand-link.captioned .footer-brand-logo {
   height: 2rem;
-}
-
-.talmo-name {
-  font-size: 0.65rem;
-  letter-spacing: 0.02em;
-  white-space: nowrap;
-}
-
-.talmo-logo.on-dark {
-  display: none;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) .talmo-logo.on-light {
-    display: none;
-  }
-  :root:not([data-theme="light"]) .talmo-logo.on-dark {
-    display: block;
-  }
-}
-
-:root[data-theme="dark"] .talmo-logo.on-light {
-  display: none;
-}
-
-:root[data-theme="dark"] .talmo-logo.on-dark {
-  display: block;
 }
 
 /* ------------------------------------------------------------------------------------------ */
@@ -165,11 +149,6 @@ main.workspace {
 
 .ember-bar-button:hover {
   background: var(--sleap-raised);
-}
-
-.ember-bar-version {
-  margin-left: auto;
-  color: var(--sleap-muted);
 }
 
 /* ------------------------------------------------------------------------------------------ */

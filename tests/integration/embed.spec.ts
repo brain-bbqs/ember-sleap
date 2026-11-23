@@ -31,7 +31,7 @@ test.describe("the embedded SLEAP app", () => {
 
   test("saves on Ctrl+S only while focus is inside the app", async ({ page }) => {
     await openMockProject(page);
-    await page.locator("#theme-toggle").focus();
+    await page.locator("#version-indicator").focus();
     await page.keyboard.press("Control+s");
     await expect(role(page, "save-status")).toHaveText("");
 

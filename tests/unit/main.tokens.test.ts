@@ -6,7 +6,7 @@
 import { jsonResponse, routeFetch, type FetchRouter } from "@brain-bbqs/test-utils/vitest";
 import type { OAuthTokenSet } from "@brain-bbqs/ember-client";
 import { beforeAll, describe, expect, it, vi } from "vitest";
-import { STORAGE_KEY, THEME_KEY } from "../../src/lib/settings";
+import { STORAGE_KEY } from "../../src/lib/settings";
 import { bootMain, el } from "./helpers/mainHarness";
 
 const fakes = vi.hoisted(() => {
@@ -122,7 +122,7 @@ describe("tokens across refreshes, sign-out and other tabs", () => {
     const lookups = fetchMock.callsTo("/users/me/").length;
 
     otherTabWrites({ dandisetId: "000456", oauth: fresh(2) });
-    otherTabWrites({ dandisetId: "000456", oauth: fresh(2) }, THEME_KEY);
+    otherTabWrites({ dandisetId: "000456", oauth: fresh(2) }, "ember-sleap.some-other-key");
     await settle();
     expect(fetchMock.callsTo("/users/me/").length).toBe(lookups);
   });

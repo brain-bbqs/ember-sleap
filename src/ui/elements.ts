@@ -1,11 +1,24 @@
 // Typed lookups for the static skeleton markup in index.html. Every id the app touches is
 // registered here, so a renamed or dropped element fails on import (and in the boot smoke test)
 // rather than as a null dereference somewhere down the page.
-import { getShellElements, required } from "@brain-bbqs/ui";
+import { required } from "@brain-bbqs/ui";
 
-/** The shell: theme toggle, version stamp and the EMBER account menu, looked up by @brain-bbqs/ui. */
+/**
+ * The shell: the version stamp and the EMBER account menu, at @brain-bbqs/ui's default ids. Looked
+ * up here rather than by that package's getShellElements, which requires a theme toggle this page,
+ * dark only like the SLEAP app, does not have.
+ */
 export function getShell() {
-  return getShellElements({ themeToggle: "theme-toggle" });
+  return {
+    versionIndicator: required<HTMLAnchorElement>("version-indicator"),
+    account: {
+      oauthSigninBtn: required<HTMLButtonElement>("oauthSigninBtn"),
+      oauthSignedIn: required<HTMLElement>("oauthSignedIn"),
+      oauthAvatar: required<HTMLElement>("oauthAvatar"),
+      oauthUsername: required<HTMLElement>("oauthUsername"),
+      oauthSignoutBtn: required<HTMLButtonElement>("oauthSignoutBtn"),
+    },
+  };
 }
 
 export function getElements() {

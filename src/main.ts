@@ -14,7 +14,6 @@ import {
 import {
   bindAccountMenu,
   createHumanSubjectsGate,
-  initThemeToggle,
   refreshIdentity,
   renderAuthState,
   renderVersion,
@@ -33,7 +32,7 @@ import { createEmberModelSource } from "./lib/modelEmber";
 import { createHuggingFaceSource } from "./lib/modelHuggingFace";
 import { createIndexSource, MODEL_INDEX_URL } from "./lib/modelIndex";
 import { createOAuth } from "./lib/oauth";
-import { settingsStore, STORAGE_KEY, THEME_KEY } from "./lib/settings";
+import { settingsStore, STORAGE_KEY } from "./lib/settings";
 import {
   EMBEDDED_PAGE_EFFECTS,
   type HostRef,
@@ -63,16 +62,12 @@ const shell = getShell();
 const els = getElements();
 
 // ---------------------------------------------------------------------------------------------
-// The shared shell: the version stamp and the light/dark toggle, wired as every BBQS companion app
-// wires them. Below its header this page is the SLEAP app's, so it carries no footer and no
-// "What's New"; what follows is the app.
+// The shared shell: the footer's version stamp, wired as every BBQS companion app wires it. The
+// page is dark only, like the SLEAP app it holds, so it has no light/dark toggle, and its footer
+// carries no "What's New" or issue links; what follows is the app.
 // ---------------------------------------------------------------------------------------------
 
 renderVersion(shell.versionIndicator, __APP_VERSION__);
-
-// The inline script in index.html already applied any stored theme override before first paint,
-// so the toggle only has to flip and persist it, under the key that script reads.
-initThemeToggle(shell.themeToggle, { storageKey: THEME_KEY });
 
 // ---------------------------------------------------------------------------------------------
 // The app: EMBER sign-in and the project picker around the embedded SLEAP app, and the host
@@ -88,7 +83,7 @@ const MESSAGES: FriendlyMessages = {
 const FLAG_UNREAD =
   "Could not check this dandiset's human-subjects flag, so saving to it is refused. Save again to retry the check.";
 
-const account = shell.account!;
+const account = shell.account;
 const injection = readTestInjection(window.location.search);
 // Either mock state runs offline: in-memory saves, fixed models and the compute stub.
 const mocked = !!(injection?.mockProject || injection?.mockNewProject);

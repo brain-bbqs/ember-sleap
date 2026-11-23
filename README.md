@@ -26,7 +26,7 @@ Swapping in the real package is a change to one function, `loadSleapComponent` i
 
 | Piece                                                  | State                                                                                                                     |
 | ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------- |
-| The page                                               | The SLEAP app below a BBQS header, laid out like the SLEAP web app; the stand-in until the real component ships           |
+| The page                                               | The SLEAP app between a BBQS header and footer, dark only and laid out like the SLEAP web app; the stand-in for now       |
 | Open a `.slp` or `.pkg.slp` from any readable dandiset | Works against the live archive                                                                                            |
 | Start a new project on a dandiset's videos             | Picking a dandiset with no SLEAP project, or New Project, starts one; its `.slp` is written in the browser on first save  |
 | Save to `derivatives/sleap/` as a BIDS derivative      | Works end to end against a mocked archive; needs sign-in                                                                  |

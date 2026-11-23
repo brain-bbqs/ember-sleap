@@ -4,7 +4,7 @@
 
 #### 🚀 Enhancement
 
-- EMBER sign-in is on, the page now looks like the SLEAP app, and a dandiset without a project starts one from its videos ([#9](https://github.com/brain-bbqs/ember-sleap/pull/9))
+- EMBER sign-in is on, the page now looks like the dark SLEAP app, and a dandiset without a project starts one from its videos ([#9](https://github.com/brain-bbqs/ember-sleap/pull/9))
 
 ## 0.1.4
 

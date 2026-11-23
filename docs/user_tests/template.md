@@ -19,7 +19,7 @@ Copy this file to `docs/user_tests/<tester>.md`, fill it in, and open it as a PR
 
 ## Starting a new project
 
-- [ ] The page opens on the SLEAP app's start screen, below the header, with no footer
+- [ ] The page opens on the SLEAP app's start screen, between the header and a footer holding only the version link (bottom left) and the Talmo Lab and CON marks (bottom right)
 - [ ] "Open Project" on a dandiset with videos but no `.slp` starts a new project on its videos, listed in the Videos panel, the first playing in the canvas
 - [ ] "New Project" on a dandiset that has projects still starts a new one
 - [ ] Saving a new project (signed in, on a dandiset you own) writes `derivatives/sleap/sub-.../beh/..._desc-labels<FirstVideo>_pose.slp`, which the SLEAP desktop app opens with the videos listed
@@ -56,9 +56,9 @@ Copy this file to `docs/user_tests/<tester>.md`, fill it in, and open it as a PR
 ## Cross-cutting
 
 - [ ] Reloading the page mid-task doesn't leave local state (localStorage) in a way that breaks the next load
-- [ ] The app is usable in both light and dark OS/browser theme, and the header toggle flips between them
+- [ ] The app stays dark whatever the OS or browser theme, and has no theme toggle
 - [ ] Basic responsiveness: window resized narrower doesn't break layout or hide controls
 - [ ] Loading the page shows no unexpected errors in the browser console
-- [ ] Can navigate to all hyperlinks in the bottom-left, and "What's New" opens with the current version's entry
+- [ ] The bottom-left version link opens the source on GitHub, and the bottom-right marks open the Talmo Lab and CON sites
 
 ## Extra notes

@@ -1,15 +1,14 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { settingsStore, STORAGE_KEY, THEME_KEY } from "../../src/lib/settings";
+import { settingsStore, STORAGE_KEY } from "../../src/lib/settings";
 
 const { name } = JSON.parse(readFileSync(resolve(process.cwd(), "package.json"), "utf-8")) as { name: string };
 
-// Storing, loading and refusing the theme are @brain-bbqs/ui's (initThemeToggle) and are tested
-// there; the app's part is the keys, which the page and the pre-paint script have to share.
-describe("storage keys", () => {
-  it("are namespaced by this app's package name", () => {
-    expect(THEME_KEY).toBe(`${name}.theme`);
+// The app's part is the key, which the page and the pre-paint script have to share. The page is
+// dark only, so it stores no theme.
+describe("storage key", () => {
+  it("is namespaced by this app's package name", () => {
     expect(STORAGE_KEY).toBe(`${name}.settings.v1`);
   });
 });
