@@ -14,9 +14,9 @@ dependencies:
       ref: 71e788c662d97165881b1dbc733dcd34210d979d
       skills:
         - setup-chromatic
-    - brain-bbqs/bbqs-web-components/skills/frontend-security#66c335e3612f4fa977a85a92210f23158a12608d
-    - brain-bbqs/bbqs-web-components/skills/reuse-license-setup#66c335e3612f4fa977a85a92210f23158a12608d
-    - brain-bbqs/bbqs-web-components/skills/visual-snapshots#66c335e3612f4fa977a85a92210f23158a12608d
+    - brain-bbqs/bbqs-web-components/skills/frontend-security#868bf066833100cc21654e117f3a56079a3bbc11
+    - brain-bbqs/bbqs-web-components/skills/reuse-license-setup#868bf066833100cc21654e117f3a56079a3bbc11
+    - brain-bbqs/bbqs-web-components/skills/visual-snapshots#868bf066833100cc21654e117f3a56079a3bbc11
   mcp: []
 includes: auto
 scripts: {}
