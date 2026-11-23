@@ -8,7 +8,8 @@
   </p>
 </p>
 
-Label, train and predict with [SLEAP](https://sleap.ai) on data in the [EMBER archive](https://dandi.emberarchive.org): the SLEAP web app embedded in a BBQS page that opens and saves projects on EMBER.
+Label, train and predict using [SLEAP](https://sleap.ai) directly on data in the [EMBER archive](https://dandi.emberarchive.org).
+Able to leverage cloud resources for all compute steps and backs up all operations and provenance to the archive.
 
 ---
 
