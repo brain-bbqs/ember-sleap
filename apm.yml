@@ -1,7 +1,7 @@
-# The agent skills this repository installs: its own, from .apm/skills/, and shared ones, each
-# pinned to a commit. `apm install --frozen` writes them all into .claude/skills/ and
-# .agents/skills/, where the copies are generated and git-ignored: edit this repository's own in
-# .apm/skills/, and improve a shared one in its own repository, then move the pin here.
+# The agent skills this repository installs, each an APM package pinned to a commit.
+# `apm install --frozen` writes them into .claude/skills/ and .agents/skills/, where the copies are
+# generated and git-ignored: no copy is committed. Improve a skill in its own repository, then move
+# its pin here.
 name: ember-sleap
 version: 1.0.0
 description: Agent skills this app installs from shared collections.
@@ -14,6 +14,9 @@ dependencies:
       ref: 71e788c662d97165881b1dbc733dcd34210d979d
       skills:
         - setup-chromatic
+    - brain-bbqs/bbqs-web-components/skills/frontend-security#66c335e3612f4fa977a85a92210f23158a12608d
+    - brain-bbqs/bbqs-web-components/skills/reuse-license-setup#66c335e3612f4fa977a85a92210f23158a12608d
+    - brain-bbqs/bbqs-web-components/skills/visual-snapshots#66c335e3612f4fa977a85a92210f23158a12608d
   mcp: []
 includes: auto
 scripts: {}
