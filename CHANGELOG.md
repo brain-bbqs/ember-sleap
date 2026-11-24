@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.0
+
+#### 🚀 Enhancement
+
+- DeepLabCut's SuperAnimal mouse and quadruped models join the model list, to predict with alongside SLEAP models ([#16](https://github.com/brain-bbqs/ember-sleap/pull/16))
+
 ## 0.4.0
 
 #### 🚀 Enhancement
