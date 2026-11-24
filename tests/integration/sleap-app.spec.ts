@@ -47,6 +47,32 @@ async function routeArchive(page: Page): Promise<void> {
 }
 
 test.describe("the SLEAP app in the page", () => {
+  // The start screen's SLEAP logo is baked into the middle of its background image (2752x1536, the
+  // logo card on rows 495 to 1041), and our header and footer leave the app a short area for its
+  // width. 1536x730 is a 1080p laptop at 125% with the browser's own bars, the tightest common case.
+  test("keeps the start screen's logo above its New/Open panel on a short, wide screen", async ({ page }) => {
+    await page.setViewportSize({ width: 1536, height: 730 });
+    await page.goto("/");
+    const newProject = page.getByRole("button", { name: "New Project" });
+    await expect(newProject).toBeVisible();
+    const layout = await page.locator("#sleap-root").evaluate((root) => {
+      const layer = [...root.querySelectorAll("div")].find((d) =>
+        getComputedStyle(d).backgroundImage.includes("background.jpg"),
+      );
+      if (!layer) throw new Error("No element draws the start screen's background image.");
+      const box = layer.getBoundingClientRect();
+      const size = getComputedStyle(layer).backgroundSize;
+      const scale =
+        size === "cover" ? Math.max(box.width / 2752, box.height / 1536) : parseFloat(size.split(" ")[1]) / 1536;
+      const imageTop = box.top + (box.height - 1536 * scale) / 2;
+      return { logoTop: imageTop + 495 * scale, logoBottom: imageTop + 1041 * scale };
+    });
+    const panel = await newProject.locator("xpath=ancestor::div[contains(@class, 'z-10')][1]").boundingBox();
+    const appTop = (await page.locator("#sleap-root").boundingBox())!.y;
+    expect(layout.logoBottom).toBeLessThanOrEqual(panel!.y);
+    expect(layout.logoTop).toBeGreaterThanOrEqual(appTop);
+  });
+
   test("mounts between the header and footer, loading everything from this page's own host", async ({ page }) => {
     const hosts = new Set<string>();
     page.on("request", (request) => {
