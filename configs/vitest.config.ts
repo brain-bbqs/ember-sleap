@@ -22,6 +22,8 @@ export default defineConfig(
         // once in `beforeAll` and assert on what it did across multiple `it` blocks, so restore the
         // pre-v5 behavior of leaving mocks alone between tests.
         clearMocks: false,
+        // jsdom cannot run the real SLEAP app: unit-test boots mount the stand-in (see the file).
+        setupFiles: ["tests/unit/helpers/standInComponent.ts"],
       },
     },
   }),

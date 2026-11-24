@@ -1,6 +1,6 @@
 {
   "name": "ember-sleap",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Label, train and predict with SLEAP on data in the EMBER archive: the SLEAP web app embedded in a BBQS page that opens and saves on EMBER.",
   "type": "module",
   "license": "MIT",
@@ -40,6 +40,10 @@
     "vitest": "^5.0.0"
   },
   "dependencies": {
-    "@brain-bbqs/ui": "^0.4.0"
+    "@brain-bbqs/ember-client": "^0.2.0",
+    "@brain-bbqs/ui": "^0.4.0",
+    "@brain-bbqs/utils": "^0.2.0",
+    "@talmolab/sleap-app": "github:brain-bbqs/sleap-app#a0474f29b21638edc9c5196321ea6f60a1d64c3a",
+    "@talmolab/sleap-io.js": "^0.5.16"
   }
 }

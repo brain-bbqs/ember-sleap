@@ -22,6 +22,20 @@ Funded by the [National Institutes of Health (NIH)](https://www.nih.gov/brain/re
 ## Status: prototype
 
 This is the ember-sleap side of [the development plan](docs/DEVELOPMENT_PLAN.md).
-So far the page is the BBQS shell around where the SLEAP web app will mount: the header, led by SLEAP's logo with an EMBER badge, an empty area filling the window, and the footer, dark only like the SLEAP app.
+The page mounts the real SLEAP web app, built as a component on our fork, [brain-bbqs/sleap-app](https://github.com/brain-bbqs/sleap-app) (`embed/integration`), through the contract proposed upstream (`src/lib/sleapContract.ts`, [docs/UPSTREAM_PROPOSAL.md](docs/UPSTREAM_PROPOSAL.md)).
+It is installed from the fork's `embed/package` branch as `@talmolab/sleap-app`, pinned to a commit in `package.json`, and served beside the page at `sleap-app/` (`configs/sleapAppPackage.ts`).
+Nothing has been sent upstream: this is a test run of that path.
+A **stand-in** (`src/ui/sleapStandIn.ts`) drives the host's callbacks for the `?test` mocks and the unit tests.
 
-Local development is in [docs/README.md](docs/README.md).
+| Piece                                                  | State                                                                                                                    |
+| ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------ |
+| The page                                               | The real SLEAP app (labeling included) between a BBQS header and footer, dark only                                       |
+| Open a `.slp` or `.pkg.slp` from any readable dandiset | Works against the live archive                                                                                           |
+| Start a new project on a dandiset's videos             | Picking a dandiset with no SLEAP project, or New Project, starts one in the SLEAP app, which reads the videos from EMBER |
+| Save to `derivatives/sleap/` as a BIDS derivative      | Works end to end against a mocked archive; needs sign-in                                                                 |
+| EMBER sign-in                                          | On, with ember-sleap's own OAuth app on EMBER; redirect URIs still to confirm                                            |
+| Models, training and inference through EMBER           | Held for a follow-up PR until the fork's plan PRs 7b and 7c and the compute proxy exist; the real app offers its own     |
+
+Try it with [`?dandiset=000398`](https://brain-bbqs.github.io/ember-sleap/?dandiset=000398) (a public SLEAP example) or offline with [`?test&mock_project`](https://brain-bbqs.github.io/ember-sleap/?test&mock_project) and [`?test&mock_new_project`](https://brain-bbqs.github.io/ember-sleap/?test&mock_new_project).
+
+Local development and the live test injections are in [docs/README.md](docs/README.md).

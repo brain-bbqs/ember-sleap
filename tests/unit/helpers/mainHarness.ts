@@ -8,3 +8,17 @@ import { createMainHarness } from "@brain-bbqs/test-utils/vitest";
 
 export const { bootMain } = createMainHarness({ importMain: () => import("../../../src/main") });
 export { el } from "@brain-bbqs/test-utils/vitest";
+
+/** The stand-in's element for a `data-role`, or a thrown "missing". */
+export function role<T extends HTMLElement = HTMLElement>(name: string): T {
+  const found = document.querySelector<T>(`[data-role="${name}"]`);
+  if (!found) throw new Error(`missing [data-role="${name}"]`);
+  return found;
+}
+
+/** A fetch response that, like one that followed redirects, reports where it ended up. */
+export function redirectedResponse(finalUrl: string, body: BodyInit | null = null): Response {
+  const response = new Response(body, { status: 200 });
+  Object.defineProperty(response, "url", { value: finalUrl });
+  return response;
+}

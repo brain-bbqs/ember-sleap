@@ -16,14 +16,14 @@ grep -rn "innerHTML\|outerHTML\|insertAdjacentHTML" src/
 
 For every hit, confirm any _dynamic_ (user-supplied, API-returned, file-derived, or otherwise non-literal) string is assigned via `.textContent` (or an `element.value` type property) rather than concatenated into the HTML string itself.
 A fixed, hardcoded template assigned via `innerHTML` is fine; the risk is interpolating untrusted data into HTML source, not the property name.
-This app's own code under `src/` has no `innerHTML` use.
+This app's own code under `src/` has no `innerHTML` use: the project list, the SLEAP stand-in, the dialogs and the status lines are built from elements and `.textContent`, and the What's New modal is drawn by `@brain-bbqs/ui`'s `initWhatsNew`, which builds `CHANGELOG.md` into DOM nodes and never parses it as markup.
 Keep it that way: this is the property that makes accepting client-side credential storage a reasonable call for an app of this shape.
 
 Also keep an eye on:
 
 - **No third-party runtime scripts.** Nothing in `index.html` loads a CDN `<script>` tag.
   A compromised third-party script is the other realistic way a token in storage gets exfiltrated even without a bug in this app's own code, so keep it that way.
-- **Minimal runtime dependencies.** This app's one is the shared `@brain-bbqs/ui` package.
+- **Minimal runtime dependencies.** This app's are the shared `@brain-bbqs/ui`, `@brain-bbqs/utils` and `@brain-bbqs/ember-client` packages; the SLEAP web app itself, `@talmolab/sleap-app`, built from our fork (`brain-bbqs/sleap-app`) and pinned to a commit, which runs in the page with the same access as its own code; and the Talmo Lab's `@talmolab/sleap-io.js`, which the SLEAP stand-in loads only to write a new project's `.slp` (the real app carries its own copy, so it goes with the stand-in).
   Every added runtime dependency is something that could be compromised upstream and ship code that reads `localStorage`; don't add one without a reason.
 
 ## Handling a "clear text storage" alert on a new credential
@@ -47,5 +47,15 @@ If the app calls a companion service (anything that is not the API the token was
 A service that needs to look something up does so with its own key, server-side.
 An earlier version of a sibling app forwarded the signed-in user's live access token to a helper host on every page load, which put a credential capable of acting as that user on a machine the repository doesn't control; a unit test now pins the absence of the `Authorization` header on that call.
 Do the same here: if such a service ever needs to know something it can't resolve with its own credentials, change the service, not the header.
+
+## Sign-in and the token lifecycle
+
+- **Grant:** OAuth 2 authorization code with PKCE, through `@brain-bbqs/ember-client`, as a public client with no secret, requesting EMBER's default scope.
+  ember-sleap is its own OAuth application on EMBER (`OAUTH_CLIENT_ID` in `src/lib/oauth.ts`), separate from its sibling apps' so each can be revoked on its own.
+- **Storage:** the PKCE verifier and state wait in `sessionStorage` across the redirect; the access and refresh tokens persist in `localStorage` under `ember-sleap.settings.v1`, an accepted trade-off by the checklist above.
+- **Lifetime and refresh:** access tokens live as long as EMBER's OAuth server sets.
+  Within 60 seconds of expiry, the next call to EMBER first refreshes them with the `refresh_token` grant.
+  One refresh runs at a time however many calls are waiting on it, since EMBER rotates refresh tokens, and a tab follows another tab's refresh or sign-out instead of writing its own tokens back over it.
+- **Sign-out:** a best-effort revocation of the access token at EMBER's `/oauth/revoke_token/`, and the stored tokens are cleared.
 
 The `frontend-security` skill, installed by `apm install` from `brain-bbqs/bbqs-web-components`, is the triggerable summary of this file; a change here that it should reflect goes to that repository too.

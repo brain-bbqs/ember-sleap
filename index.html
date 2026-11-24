@@ -32,10 +32,73 @@
           <img class="plugin-logo-badge" src="/src/assets/ember-badge.svg" alt="" />
         </a>
         <h1>EMBER SLEAP</h1>
+        <div class="header-actions">
+          <button type="button" id="oauthSigninBtn" class="primary oauth-signin-btn">Sign in with EMBER</button>
+          <div id="oauthSignedIn" class="oauth-signed-in" hidden>
+            <span id="oauthAvatar" class="oauth-avatar" tabindex="0" aria-label="Account menu"></span>
+            <div class="oauth-popover" role="menu">
+              <p class="oauth-popover-greeting">You are logged in as <strong id="oauthUsername"></strong>.</p>
+              <hr class="oauth-popover-divider" />
+              <button type="button" id="oauthSignoutBtn" class="oauth-popover-signout" role="menuitem">
+                <span>Sign out</span>
+                <svg
+                  class="oauth-popover-signout-icon"
+                  viewBox="0 0 24 24"
+                  width="14"
+                  height="14"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                  <polyline points="16 17 21 12 16 7" />
+                  <line x1="21" y1="12" x2="9" y2="12" />
+                </svg>
+              </button>
+            </div>
+          </div>
+        </div>
       </header>
 
-      <!-- Where the SLEAP app will mount, filling the window between the header and the footer. -->
-      <div class="sleap-root"></div>
+      <!-- The human-subjects compliance gate. Same markup @brain-bbqs/ui's buildHumanSubjectsBanner() produces. -->
+      <div id="humanSubjectsBanner" class="human-subjects-banner" role="alert" hidden>
+        <p class="human-subjects-heading">
+          <span aria-hidden="true">⚠️</span>
+          <span>This dataset has been flagged as being intended for HUMAN SUBJECTS</span>
+          <span aria-hidden="true">⚠️</span>
+        </p>
+        <div id="humanSubjectsUnconfirmed">
+          <p class="human-subjects-body">Saving to this dataset is disabled until you confirm both of the following:</p>
+          <ul class="human-subjects-body">
+            <li>
+              Every file you save has been properly <strong>de-identified</strong>: no names, faces, voices, dates of
+              birth, or any other personally identifiable information beyond what your approval explicitly permits.
+            </li>
+            <li>Collection and sharing of this data is covered by your institution's <strong>IRB approval</strong>.</li>
+          </ul>
+          <div class="human-subjects-controls">
+            <button type="button" id="humanSubjectsConfirmBtn" class="human-subjects-confirm-btn">I confirm</button>
+          </div>
+        </div>
+        <p id="humanSubjectsConfirmed" class="human-subjects-confirmed" hidden>
+          ✓ Confirmed: data is de-identified and covered by your institution's IRB approval. Saving is enabled.
+        </p>
+      </div>
+
+      <!-- Where the open project lives on EMBER, what the page last did with it, and the way out of it. -->
+      <div id="ember-bar" class="ember-bar">
+        <span class="ember-bar-label">EMBER</span>
+        <span id="project-title" class="ember-bar-title"></span>
+        <span id="project-location" class="ember-bar-location">No project open</span>
+        <span id="host-status" class="ember-bar-status" role="status"></span>
+        <button type="button" id="close-project-btn" class="ember-bar-button" hidden>Close project</button>
+      </div>
+
+      <!-- The SLEAP app mounts here (src/ui/sleapComponent.ts decides what that is) and fills the window. -->
+      <div id="sleap-root" class="sleap-root"></div>
 
       <!-- The BBQS footer, without its What's New and issue links: the version stamp bottom-left,
            the brand marks bottom-right. A row of the page's column rather than pinned over it, so
@@ -82,6 +145,64 @@
         </div>
       </footer>
     </main>
+
+    <dialog id="open-dialog" class="page-dialog open-dialog" aria-labelledby="open-dialog-title">
+      <div class="open-dialog-header">
+        <h2 id="open-dialog-title">Open a project from EMBER</h2>
+        <button type="button" id="open-dialog-close" class="open-dialog-close" aria-label="Close">&times;</button>
+      </div>
+      <p id="open-dialog-intro" class="hint"></p>
+      <form id="open-form" class="open-form">
+        <label for="dandiset-input">Dandiset</label>
+        <input
+          id="dandiset-input"
+          type="text"
+          inputmode="numeric"
+          autocomplete="off"
+          placeholder="e.g. 000398"
+          list="dandiset-options"
+        />
+        <datalist id="dandiset-options"></datalist>
+        <button type="submit" id="list-projects-btn" class="primary">List projects</button>
+      </form>
+      <p id="open-status" class="hint" role="status"></p>
+      <ul id="project-list" class="project-list" hidden></ul>
+      <button type="button" id="new-project-btn" class="new-project-btn" hidden></button>
+    </dialog>
+
+    <dialog id="entities-dialog" class="page-dialog" aria-labelledby="entities-dialog-title">
+      <form id="entities-form" method="dialog">
+        <h2 id="entities-dialog-title">Which subject is this?</h2>
+        <p class="hint">
+          Labels are saved under <code>derivatives/sleap/</code> by subject and session.
+          <span id="entities-source" class="dialog-path"></span> <span id="entities-reason"></span> Letters and digits
+          only.
+        </p>
+        <label for="entities-sub">Subject</label>
+        <input id="entities-sub" type="text" required pattern="[A-Za-z0-9]+" autocomplete="off" />
+        <label id="entities-ses-label" for="entities-ses">Session (optional)</label>
+        <input id="entities-ses" type="text" pattern="[A-Za-z0-9]+" autocomplete="off" />
+        <div class="dialog-actions">
+          <button type="button" id="entities-cancel">Cancel</button>
+          <button type="submit" id="entities-save" class="primary">Save here</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="overwrite-dialog" class="page-dialog" aria-labelledby="overwrite-dialog-title">
+      <form id="overwrite-form" method="dialog">
+        <h2 id="overwrite-dialog-title">Labels are already saved there</h2>
+        <p class="hint">
+          <span id="overwrite-path" class="dialog-path"></span> already holds labels: an earlier save of this project,
+          or another project whose name reads the same. Keep both saves these labels beside them under a numbered name.
+        </p>
+        <div class="dialog-actions">
+          <button type="button" id="overwrite-cancel">Cancel</button>
+          <button type="button" id="overwrite-replace">Replace</button>
+          <button type="submit" id="overwrite-keep" class="primary">Keep both</button>
+        </div>
+      </form>
+    </dialog>
 
     <script type="module" src="/src/main.ts"></script>
   </body>

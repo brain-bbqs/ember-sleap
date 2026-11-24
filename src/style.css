@@ -1,22 +1,37 @@
 /* The shell every BBQS companion app shares comes from @brain-bbqs/ui: the theme tokens, the page
-   defaults, the header, watermark and footer bar, and the shared controls. Between its header and
-   footer this page is the SLEAP app, laid out and colored as the SLEAP web app is, and like that
-   app it is dark only (index.html pins data-theme="dark"), so it skips the package's "What's New"
-   and its dropzone. Set a token or knob (see that package's README) on :root below to change it.
+   defaults, the header, watermark and footer bar, the shared controls and the human-subjects
+   notice. Between its header and footer this page is the SLEAP app, laid out and colored as the
+   SLEAP web app is, and like that app it is dark only (index.html pins data-theme="dark"), so it
+   skips the package's "What's New" and its dropzone. Set a token or knob (see that package's README) on :root below to change it.
    CSS allows @import only at the top, so every rule below follows the shared ones. */
 @import "@brain-bbqs/ui/styles/tokens.css";
 @import "@brain-bbqs/ui/styles/base.css";
 @import "@brain-bbqs/ui/styles/shell.css";
 @import "@brain-bbqs/ui/styles/controls.css";
+@import "@brain-bbqs/ui/styles/dataset-picker.css";
+@import "@brain-bbqs/ui/styles/human-subjects.css";
 
 /* Native controls (scrollbars, form fields) drawn for the one theme the page has. */
 :root {
   color-scheme: dark;
 }
 
-/* The SLEAP web app's background (talmolab/sleap-app, src/index.css), behind where it mounts. */
+/* The SLEAP web app's own palette (talmolab/sleap-app, src/index.css), which it keeps in both
+   themes: the app is dark whichever theme the page around it is in, so these are set once. */
 :root {
   --sleap-bg: #09090b;
+  --sleap-surface: #18181b;
+  --sleap-raised: #27272a;
+  --sleap-border: #27272a;
+  --sleap-text: #fafafa;
+  --sleap-muted: #a1a1aa;
+  --sleap-primary: #f97316;
+  --sleap-primary-hover: #ea580c;
+  --sleap-on-primary: #09090b;
+  --sleap-ok: #4ade80;
+  --sleap-err: #f87171;
+  --sleap-warn: #fbbf24;
+  --sleap-warn-soft: #3a2d12;
 }
 
 /* ------------------------------------------------------------------------------------------ */
@@ -39,6 +54,12 @@ main.workspace {
   min-height: 5.5rem;
   margin: 0 auto;
   padding: 0.75rem 0;
+}
+
+.workspace > .human-subjects-banner {
+  flex: none;
+  width: min(100% - 2rem, var(--page-max-width, 860px));
+  margin: 0 auto 0.75rem;
 }
 
 /* The footer, a row of the page's column below the app rather than pinned over it, with the
@@ -82,7 +103,91 @@ main.workspace {
 }
 
 /* ------------------------------------------------------------------------------------------ */
-/* Where the SLEAP app mounts */
+/* The EMBER bar: where the open project lives, what the page last did with it, the way out */
+/* ------------------------------------------------------------------------------------------ */
+
+.ember-bar {
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem 0.75rem;
+  min-height: 2rem;
+  padding: 0.25rem 0.75rem;
+  background: var(--sleap-surface);
+  color: var(--sleap-text);
+  border-top: 1px solid var(--sleap-border);
+  border-bottom: 1px solid var(--sleap-border);
+  font-size: 0.8rem;
+}
+
+.ember-bar-label {
+  color: var(--sleap-primary);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.ember-bar-title {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.ember-bar-title:empty {
+  display: none;
+}
+
+.ember-bar-location {
+  color: var(--sleap-muted);
+  font-family: var(--mono);
+  overflow-wrap: anywhere;
+}
+
+.ember-bar-status {
+  flex: 1 1 12rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.ember-bar-status.ok {
+  color: var(--sleap-ok);
+}
+
+.ember-bar-status.err {
+  color: var(--sleap-err);
+}
+
+.ember-bar-button {
+  padding: 0.15rem 0.6rem;
+  font-size: 0.8rem;
+  color: var(--sleap-text);
+  background: transparent;
+  border: 1px solid var(--sleap-border);
+  border-radius: 6px;
+}
+
+.ember-bar-button:hover {
+  background: var(--sleap-raised);
+}
+
+.project-open {
+  font: inherit;
+  font-family: var(--mono);
+  border: none;
+  background: none;
+  padding: 0;
+  color: var(--accent);
+  text-decoration: underline;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+  text-align: left;
+}
+
+.hint:empty {
+  display: none;
+}
+
+/* ------------------------------------------------------------------------------------------ */
+/* The embedded SLEAP app, and its stand-in laid out as the SLEAP web app */
 /* ------------------------------------------------------------------------------------------ */
 
 .sleap-root {
@@ -90,4 +195,638 @@ main.workspace {
   min-height: 0;
   display: flex;
   background: var(--sleap-bg);
+}
+
+.sleap-standin {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--sleap-bg);
+  color: var(--sleap-text);
+  font-size: 0.875rem;
+}
+
+.sleap-standin:focus {
+  outline: none;
+}
+
+.sleap-standin button {
+  font: inherit;
+}
+
+.sl-menubar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  height: 2rem;
+  padding: 0 0.6rem;
+  border-bottom: 1px solid var(--sleap-border);
+  background: var(--sleap-surface);
+}
+
+.sl-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.sl-logo {
+  width: 1rem;
+  height: 1rem;
+}
+
+.sl-brand-name {
+  color: var(--sleap-primary);
+  font-weight: 700;
+  letter-spacing: 0.03em;
+}
+
+.sl-version {
+  color: var(--sleap-muted);
+  font-size: 0.7rem;
+}
+
+.sl-menus {
+  display: flex;
+  align-items: center;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+.sl-menu {
+  position: relative;
+}
+
+.sl-menu-button {
+  padding: 0.2rem 0.55rem;
+  color: var(--sleap-text);
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+}
+
+.sl-menu-button:hover,
+.sl-menu-button[aria-expanded="true"] {
+  background: var(--sleap-raised);
+}
+
+.sl-menu-list {
+  position: absolute;
+  top: calc(100% + 0.3rem);
+  left: 0;
+  z-index: 10;
+  display: grid;
+  min-width: 13rem;
+  padding: 0.25rem;
+  background: var(--sleap-surface);
+  border: 1px solid var(--sleap-border);
+  border-radius: 6px;
+  box-shadow: 0 8px 24px var(--shadow);
+}
+
+.sl-menu-item {
+  display: flex;
+  justify-content: space-between;
+  gap: 1.5rem;
+  padding: 0.4rem 0.6rem;
+  color: var(--sleap-text);
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  text-align: left;
+}
+
+.sl-menu-item:hover,
+.sl-menu-item:focus-visible {
+  background: var(--sleap-raised);
+}
+
+.sl-shortcut {
+  color: var(--sleap-muted);
+  font-size: 0.75rem;
+}
+
+.sl-standin-note {
+  margin-left: auto;
+  padding: 0.05rem 0.45rem;
+  color: var(--sleap-warn);
+  background: var(--sleap-warn-soft);
+  border-radius: 4px;
+  font-size: 0.7rem;
+  white-space: nowrap;
+  cursor: help;
+}
+
+.sl-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+.sl-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* With nothing open: the New Project / Open Project pair low in the middle, as the SLEAP app shows it. */
+.sl-start {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  padding: 2rem 1rem 3rem;
+}
+
+.sl-start-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.75rem;
+  padding: 1rem;
+  background: var(--sleap-surface);
+  border: 1px solid var(--sleap-border);
+  border-radius: 10px;
+}
+
+.sl-start-hint {
+  max-width: 32rem;
+  margin: 0;
+  color: var(--sleap-muted);
+  font-size: 0.8rem;
+  text-align: center;
+}
+
+.sl-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.4rem 0.8rem;
+  color: var(--sleap-text);
+  background: var(--sleap-bg);
+  border: 1px solid var(--sleap-border);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.sl-button:hover {
+  background: var(--sleap-raised);
+}
+
+.sl-button.sl-primary {
+  color: var(--sleap-on-primary);
+  background: var(--sleap-primary);
+  border-color: var(--sleap-primary);
+  font-weight: 600;
+}
+
+.sl-button.sl-primary:hover {
+  background: var(--sleap-primary-hover);
+}
+
+.sl-start .sl-button {
+  padding: 0.65rem 1.1rem;
+  font-size: 0.95rem;
+}
+
+.sl-project {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.sl-canvas {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  background: var(--sleap-bg);
+}
+
+.sl-video {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: var(--sleap-bg);
+}
+
+/* Over the canvas, out of the way of a video's own controls. */
+.sl-file-card {
+  position: absolute;
+  top: 0.75rem;
+  left: 0.75rem;
+  max-width: min(36rem, calc(100% - 1.5rem));
+  padding: 0.4rem 0.65rem;
+  background: var(--sleap-surface);
+  border: 1px solid var(--sleap-border);
+  border-radius: 6px;
+}
+
+.sl-probe {
+  margin: 0;
+  color: var(--sleap-muted);
+  font-size: 0.8rem;
+  overflow-wrap: anywhere;
+}
+
+.sl-probe.ok {
+  color: var(--sleap-ok);
+}
+
+.sl-probe.err {
+  color: var(--sleap-err);
+}
+
+.sl-toolbar {
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding: 0.4rem 0.6rem;
+  border-top: 1px solid var(--sleap-border);
+  background: var(--sleap-surface);
+}
+
+.sl-side {
+  flex: none;
+  width: min(22rem, 40vw);
+  overflow-y: auto;
+  border-left: 1px solid var(--sleap-border);
+  background: var(--sleap-surface);
+}
+
+.sl-panel {
+  display: grid;
+  gap: 0.5rem;
+  padding: 0.6rem 0.75rem 0.9rem;
+  border-bottom: 1px solid var(--sleap-border);
+}
+
+.sl-panel-title {
+  margin: 0;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.sl-panel-body {
+  display: grid;
+  gap: 0.5rem;
+  justify-items: start;
+}
+
+.sl-field {
+  display: grid;
+  gap: 0.25rem;
+  width: 100%;
+  color: var(--sleap-muted);
+  font-size: 0.8rem;
+}
+
+.sl-field input,
+.sl-field select {
+  width: 100%;
+  padding: 0.35rem 0.5rem;
+  font: inherit;
+  font-size: 0.85rem;
+  color: var(--sleap-text);
+  background: var(--sleap-bg);
+  border: 1px solid var(--sleap-border);
+  border-radius: 6px;
+}
+
+.sl-hint {
+  margin: 0;
+  color: var(--sleap-muted);
+  font-size: 0.8rem;
+  overflow-wrap: anywhere;
+}
+
+.sl-hint:empty {
+  display: none;
+}
+
+.sl-hint.ok {
+  color: var(--sleap-ok);
+}
+
+.sl-hint.err {
+  color: var(--sleap-err);
+}
+
+.sl-video-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.25rem;
+}
+
+.sl-video-item {
+  width: 100%;
+  padding: 0.3rem 0.5rem;
+  color: var(--sleap-text);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  text-align: left;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+
+.sl-video-item:hover {
+  background: var(--sleap-raised);
+}
+
+.sl-video-item[aria-pressed="true"] {
+  border-color: var(--sleap-primary);
+}
+
+.sl-rail {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.4rem 0.3rem;
+  border-left: 1px solid var(--sleap-border);
+  background: var(--sleap-surface);
+}
+
+.sl-rail-button {
+  display: grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  color: var(--sleap-muted);
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+}
+
+.sl-rail-button:hover {
+  color: var(--sleap-primary);
+  background: var(--sleap-raised);
+}
+
+.sl-statusbar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  min-height: 1.75rem;
+  padding: 0.15rem 0.6rem;
+  border-top: 1px solid var(--sleap-border);
+  background: var(--sleap-surface);
+  font-size: 0.75rem;
+}
+
+.sl-status-left {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem 0.5rem;
+  min-width: 0;
+}
+
+.sl-file-name {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.sl-save-status.ok {
+  color: var(--sleap-ok);
+}
+
+.sl-save-status.err {
+  color: var(--sleap-err);
+}
+
+.sl-badge {
+  padding: 0 0.4rem;
+  color: var(--sleap-muted);
+  background: var(--sleap-raised);
+  border-radius: 4px;
+  font-size: 0.7rem;
+}
+
+.sl-badge.sl-warn {
+  color: var(--sleap-warn);
+  background: var(--sleap-warn-soft);
+}
+
+/* A narrow window stacks the side panel under the canvas instead of squeezing both. */
+@media (max-width: 720px) {
+  .sl-body {
+    flex-direction: column;
+    overflow-y: auto;
+  }
+  .sl-side {
+    width: auto;
+    overflow: visible;
+    border-left: none;
+    border-top: 1px solid var(--sleap-border);
+  }
+  .sl-canvas {
+    min-height: 14rem;
+  }
+  .sl-rail {
+    display: none;
+  }
+  .sl-menubar {
+    overflow-x: auto;
+  }
+  .sl-standin-note {
+    display: none;
+  }
+}
+
+/* ------------------------------------------------------------------------------------------ */
+/* Choosing a dandiset to open a project from, or start one in */
+/* ------------------------------------------------------------------------------------------ */
+
+.open-dialog {
+  width: min(36rem, calc(100vw - 2rem));
+}
+
+.open-dialog-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.open-dialog-close {
+  padding: 0 0.5rem;
+  font-size: 1.4rem;
+  line-height: 1.2;
+  background: transparent;
+  border: none;
+}
+
+.open-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+}
+
+.open-form input {
+  flex: 1 1 10rem;
+  min-width: 0;
+  padding: 0.45rem 0.6rem;
+  font: inherit;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.project-list {
+  list-style: none;
+  margin: 0.75rem 0 0;
+  padding: 0;
+  display: grid;
+  gap: 0.35rem;
+  max-height: 40vh;
+  overflow-y: auto;
+}
+
+.project-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.25rem 0.75rem;
+}
+
+.new-project-btn {
+  justify-self: start;
+  margin-top: 0.75rem;
+}
+
+/* ------------------------------------------------------------------------------------------ */
+/* Dialogs: the picker, and asking where a save goes. They open over the SLEAP app, so they are
+   drawn as its own dialogs are: its dark surface, and its orange for the action to take. */
+/* ------------------------------------------------------------------------------------------ */
+
+/* margin: auto centers a modal dialog; the SLEAP app's base reset zeroes every margin on the page. */
+.page-dialog {
+  max-width: min(28rem, calc(100vw - 2rem));
+  margin: auto;
+  padding: 1.25rem 1.5rem;
+  border: 1px solid var(--sleap-border);
+  border-radius: 10px;
+  background: var(--sleap-surface);
+  color: var(--sleap-text);
+}
+
+.page-dialog::backdrop {
+  background: rgb(0 0 0 / 0.6);
+}
+
+.page-dialog.open-dialog {
+  max-width: none;
+}
+
+.page-dialog form {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.page-dialog .open-form {
+  display: flex;
+}
+
+.page-dialog h2 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.page-dialog .hint {
+  color: var(--sleap-muted);
+}
+
+.page-dialog .hint.err {
+  color: var(--sleap-err);
+}
+
+.page-dialog input {
+  font: inherit;
+  padding: 0.4rem 0.6rem;
+  color: var(--sleap-text);
+  background: var(--sleap-bg);
+  border: 1px solid var(--sleap-border);
+  border-radius: 6px;
+}
+
+.page-dialog button {
+  color: var(--sleap-text);
+  background: var(--sleap-bg);
+  border-color: var(--sleap-border);
+  border-radius: 6px;
+}
+
+.page-dialog button:hover {
+  background: var(--sleap-raised);
+}
+
+.page-dialog button.primary {
+  color: var(--sleap-on-primary);
+  background: var(--sleap-primary);
+  border-color: var(--sleap-primary);
+}
+
+.page-dialog button.primary:hover {
+  background: var(--sleap-primary-hover);
+}
+
+.page-dialog .open-dialog-close {
+  background: transparent;
+}
+
+.page-dialog .project-open {
+  color: var(--sleap-primary);
+  background: none;
+}
+
+.dialog-path {
+  font-family: var(--mono);
+  overflow-wrap: anywhere;
+}
+
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+/* ------------------------------------------------------------------------------------------ */
+/* The real SLEAP app in this page (src/ui/sleapComponent.ts) */
+/* ------------------------------------------------------------------------------------------ */
+
+/* The app styles itself with Tailwind, whose rules sit in cascade layers, while the shared shell's
+   element rules (buttons, form fields, links, code) are unlayered, so they would win over the app's
+   own wherever the two meet. Inside the app, and in the menus, dialogs and tooltips it renders at
+   the end of the page (each marked data-slot="…-content"), they are rolled back to the app's. */
+:is(#sleap-root[data-component="sleap-app"], [data-slot$="-content"])
+  :is(button, input, select, textarea, a, code, label, h1, h2, h3, h4) {
+  all: revert-layer;
+}
+
+/* The app's base reset (unlayered for the app, but it reaches the page too) unbolds headings. */
+.site-header h1 {
+  font-weight: 700;
 }

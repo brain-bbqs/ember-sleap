@@ -1,27 +1,103 @@
 // @vitest-environment jsdom
-// Boots the real src/main.ts against the real index.html markup and checks the shell it wires: the
-// version stamp, the one dark theme and the footer's marks. Besides covering main.ts's wiring, this
-// guards the index.html/elements.ts id contract: getShell() throws on import if any registered id
-// is missing from the page.
+// Boots the real src/main.ts against the real index.html markup with every network call failing,
+// and drives the shell end to end (version stamp, the one dark theme), the SLEAP app's start screen, and
+// the project picker's signed-out, offline behaviour. Besides covering main.ts's wiring, this guards the
+// index.html/elements.ts id contract: getShell() and getElements() throw on import if any
+// registered id is missing from the page.
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { beforeAll, describe, expect, it } from "vitest";
-import { bootMain, el } from "./helpers/mainHarness";
+import { type FetchRouter } from "@brain-bbqs/test-utils/vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
+import { OAUTH_CLIENT_ID } from "../../src/lib/oauth";
+import { STORAGE_KEY } from "../../src/lib/settings";
+import { bootMain, el, role } from "./helpers/mainHarness";
+
+let fetchMock: FetchRouter;
+
+// The real PKCE client, with the browser navigation it ends in recorded instead (jsdom has none).
+const navigations = vi.hoisted(() => [] as string[]);
+vi.mock("../../src/lib/oauth", async (importOriginal) => {
+  const real = await importOriginal<typeof import("../../src/lib/oauth")>();
+  return {
+    ...real,
+    createOAuth: () => {
+      const client = real.createOAuth();
+      return { ...client, startLogin: () => client.startLogin((url) => void navigations.push(url)) };
+    },
+  };
+});
 
 beforeAll(async () => {
-  await bootMain();
+  fetchMock = (await bootMain()).fetch!;
+  // The app mounts at boot, once its component has loaded.
+  await vi.waitFor(() => role("start"));
 });
+
+function submitDandiset(value: string): void {
+  el<HTMLInputElement>("dandiset-input").value = value;
+  el("open-form").dispatchEvent(new Event("submit", { cancelable: true }));
+}
 
 describe("main.ts boot", () => {
   it("stamps the version into the footer's link to the source", () => {
     expect(el("version-indicator").textContent).toMatch(/^v\d+\.\d+\.\d+$/);
   });
 
-  it("leads the header with SLEAP's logo, badged as an EMBER plugin", () => {
-    const logo = document.querySelector<HTMLAnchorElement>(".site-header .plugin-logo")!;
-    expect(logo.href).toBe("https://sleap.ai/");
-    expect(logo.getAttribute("aria-label")).toBe("SLEAP, an EMBER plugin");
-    expect(logo.querySelector(".plugin-logo-badge")?.getAttribute("src")).toMatch(/ember-badge\.svg$/);
+  it("opens on the SLEAP app's start screen, signed out, with no project open and no picker shown", () => {
+    expect(role("start").hidden).toBe(false);
+    expect(role("project").hidden).toBe(true);
+    expect(el("sleap-root").querySelectorAll(".sleap-app")).toHaveLength(1);
+    expect(el<HTMLDialogElement>("open-dialog").open).toBe(false);
+    expect(el("project-location").textContent).toBe("No project open");
+    expect(el("close-project-btn").hidden).toBe(true);
+    expect(el("oauthSigninBtn").hidden).toBe(false);
+    expect(el("oauthSignedIn").hidden).toBe(true);
+    expect(el<HTMLInputElement>("dandiset-input").value).toBe("");
+  });
+
+  it("opens the picker for New Project… from the File menu, and closes it from its close button", () => {
+    role("menu-file").click();
+    role("menu-new").click();
+    const dialog = el<HTMLDialogElement>("open-dialog");
+    expect(dialog.open).toBe(true);
+    expect(el("open-dialog-title").textContent).toBe("New project on EMBER");
+    expect(el("list-projects-btn").textContent).toBe("Start project");
+    expect(document.activeElement).toBe(el("dandiset-input"));
+    el("open-dialog-close").click();
+    expect(dialog.open).toBe(false);
+  });
+
+  it("opens the picker for Open Project from the start screen", () => {
+    role("start-open").click();
+    expect(el<HTMLDialogElement>("open-dialog").open).toBe(true);
+    expect(el("open-dialog-title").textContent).toBe("Open a project from EMBER");
+    expect(el("list-projects-btn").textContent).toBe("List projects");
+  });
+
+  it("sends sign-in to EMBER's authorize page as ember-sleap, to come back to this page", async () => {
+    el("oauthSigninBtn").click();
+    await vi.waitFor(() => expect(navigations).toHaveLength(1));
+    const authorize = new URL(navigations[0]);
+    expect(`${authorize.origin}${authorize.pathname}`).toBe("https://api-dandi.emberarchive.org/oauth/authorize/");
+    expect(authorize.searchParams.get("client_id")).toBe(OAUTH_CLIENT_ID);
+    expect(authorize.searchParams.get("redirect_uri")).toBe(`${location.origin}${location.pathname}`);
+    expect(authorize.searchParams.get("code_challenge_method")).toBe("S256");
+    expect(el("open-status").textContent).toBe("");
+  });
+
+  it("asks for a dandiset id when the field holds none", () => {
+    submitDandiset("not a dandiset");
+    expect(el("open-status").textContent).toBe("Enter a dandiset id, such as 000398.");
+  });
+
+  it("remembers the dandiset asked for, and reports the archive being unreachable", async () => {
+    submitDandiset("https://dandi.emberarchive.org/dandiset/000398");
+    expect(el("open-status").textContent).toBe("Listing the projects in dandiset 000398…");
+    await vi.waitFor(() => expect(el("open-status").textContent).toMatch(/^Network error calling/));
+    expect(el("open-status").classList.contains("err")).toBe(true);
+    expect(el("project-list").hidden).toBe(true);
+    expect(JSON.parse(localStorage.getItem(STORAGE_KEY)!)).toEqual({ dandisetId: "000398" });
+    expect(fetchMock.callsTo("/dandisets/000398/").length).toBeGreaterThan(0);
   });
 
   it("is dark only, like the SLEAP app, with no theme toggle", () => {
@@ -40,5 +116,18 @@ describe("main.ts boot", () => {
     ]);
     expect(footer.querySelectorAll("button")).toHaveLength(0);
     expect(document.getElementById("whats-new-modal")).toBeNull();
+  });
+
+  it("revokes nothing on a sign-out with no account signed in", () => {
+    const before = fetchMock.calls.length;
+    el("oauthSignoutBtn").click();
+    expect(el("oauthSigninBtn").hidden).toBe(false);
+    expect(fetchMock.calls.slice(before).some((c) => c.url.includes("/oauth/revoke_token/"))).toBe(false);
+  });
+
+  it("lets the page unload freely with nothing open", () => {
+    const event = new Event("beforeunload", { cancelable: true });
+    window.dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(false);
   });
 });

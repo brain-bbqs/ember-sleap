@@ -40,6 +40,7 @@ export interface MountOptions {
 }
 
 export interface SleapHost {
+  chooseProject?(intent: "new" | "open"): void;                          // New/Open Project, menu and start screen
   save?(file: Blob, name: string, ref?: HostRef): Promise<HostRef>;       // Ctrl+S, File > Save
   resolveVideo?(storedPath: string, project?: HostRef): Promise<ResolvedFile | null>;
   refreshUrl?(file: ResolvedFile): Promise<ResolvedFile>;                 // after a 403
@@ -51,8 +52,15 @@ export interface SleapHost {
 
 export interface SleapAppHandle {
   open(file: ResolvedFile & { ref?: HostRef }): Promise<void>;
+  create(project: NewProjectRequest): Promise<void>;                     // an unsaved project on the host's videos
   isDirty(): boolean;
   unmount(): void;
+}
+
+export interface NewProjectRequest {
+  name: string;
+  videos: (ResolvedFile & { storedPath: string })[];                     // storedPath: what the .slp records
+  ref?: HostRef;                                                         // what its first save passes to host.save
 }
 
 export interface ResolvedFile {
@@ -70,11 +78,22 @@ export interface ModelCard {
   species?: string;
   heads: ("centroid" | "centered_instance" | "bottomup" | "single_instance")[];
   skeleton?: { nodes: string[]; edges: [string, string][] };
-  files: { role: "config" | "checkpoint"; url: string; sha256?: string }[];
+  files: {
+    role: "config" | "checkpoint";
+    folder: string;                     // the model folder: "" for a single one; a top-down
+                                        // model has "centroid" and "centered_instance"
+    url: string;
+    sha256?: string;
+  }[];
+  sourceLabel?: string;                 // where the host found it, shown as is
 }
 ```
 
+`chooseProject` hands New Project… and Open Project… (the File menu and the start screen) to the host, which shows its own picker and answers through `create` or `open`; without it the app keeps its local file pickers. A host whose data lives in an archive, as ours does on EMBER, starts a project on videos it already holds, so the New Project dialog's video step is the host's while the project itself, and the `.slp` its first save writes, stay the app's.
+
 `TrainJobSpec` and `TrackJobSpec` are the existing types in `src/lib/sleapConnect.ts`, and `JobEvent` would mirror the events the job viewer already consumes. That way the training and inference dialogs and the job viewer stay exactly as they are; only where a job goes changes.
+
+A model card names the model folder of each file because sleap-nn loads a model one folder per head: a top-down model is a centroid folder and a centered-instance folder, and inference needs both, so the host sends a worker every folder of the model the picker chose; any other model is one folder. `sourceLabel` is the host's own words for where it found a model (for example "from Hugging Face talmolab/mice-topdown"), which the picker shows beside it as it is and never parses or fetches.
 
 ## What we'd guarantee
 
@@ -93,7 +112,7 @@ export interface ModelCard {
 | 4 | One container for all menu, dialog and tooltip portals (36 uses in 10 files) | Medium | None |
 | 5 | Keyboard shortcuts bound to the app root instead of `window` | Medium | None |
 | 6 | Page-level side effects (`document.title`, `beforeunload`, `?open=`, `window.sleap`) become options | Small | None by default |
-| 7a | Host storage callbacks: `save`, `resolveVideo`, `refreshUrl`, `open` | Medium | None by default |
+| 7a | Host storage callbacks: `save`, `resolveVideo`, `refreshUrl`, `open`, `create`, `chooseProject` | Medium | None by default |
 | 7b | Host model catalogue: `listModels` and a model-card picker | Medium | None by default |
 | 7c | A compute backend interface, with Local and SLEAP Connect as built-ins and an option to hide them | Large | None by default |
 | 8 | Library build, `mountSleapApp`, package exports, and `npm publish` in the release workflow | Medium | New way to distribute the app |

@@ -3,10 +3,10 @@
 // page, and every id in the page is registered by a lookup (or referenced by the page itself).
 import { expectIdContract, readIndexHtml } from "@brain-bbqs/test-utils/vitest";
 import { describe, it } from "vitest";
-import { getShell } from "../../src/ui/elements";
+import { getElements, getShell } from "../../src/ui/elements";
 
 describe("element lookups", () => {
   it("index.html and the element lookups agree", () => {
-    expectIdContract({ html: readIndexHtml(), lookups: [getShell] });
+    expectIdContract({ html: readIndexHtml(), lookups: [getShell, getElements] });
   });
 });
