@@ -44,7 +44,7 @@
     "@brain-bbqs/ember-client": "^0.2.0",
     "@brain-bbqs/ui": "^0.4.0",
     "@brain-bbqs/utils": "^0.2.0",
-    "@talmolab/sleap-app": "github:brain-bbqs/sleap-app#22ae87bd43de8c1287e422d23961502ff2e85da8",
+    "@talmolab/sleap-app": "github:brain-bbqs/sleap-app#a0474f29b21638edc9c5196321ea6f60a1d64c3a",
     "@talmolab/sleap-io.js": "^0.5.16"
   }
 }
