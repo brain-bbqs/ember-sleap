@@ -22,13 +22,20 @@ export interface HostRef {
 
 export type ModelHead = "centroid" | "centered_instance" | "bottomup" | "single_instance";
 
+/** What runs a model: SLEAP's own sleap-nn, or DeepLabCut (its pretrained SuperAnimal models). */
+export type ModelFramework = "sleap-nn" | "deeplabcut";
+
 export interface ModelSkeleton {
   nodes: string[];
   edges: [string, string][];
 }
 
 export interface ModelFile {
-  role: "config" | "checkpoint";
+  /**
+   * In a sleap-nn model folder, its `config` or `checkpoint`; in a DeepLabCut model, its pose
+   * `checkpoint` or the `detector` checkpoint that finds each animal first.
+   */
+  role: "config" | "checkpoint" | "detector";
   /**
    * The model folder the file belongs to, as a path below where the host keeps the model: "" for
    * one kept at the top, or e.g. "centroid" and "centered_instance" for the two folders of a
@@ -45,6 +52,8 @@ export interface ModelCard {
   name: string;
   license?: string;
   species?: string;
+  /** Absent for sleap-nn. A DeepLabCut model is for inference only, and declares no heads. */
+  framework?: ModelFramework;
   heads: ModelHead[];
   skeleton?: ModelSkeleton;
   files: ModelFile[];

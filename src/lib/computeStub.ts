@@ -133,15 +133,21 @@ function trainedCard(request: JobRequest, spec: TrainJobSpec, modelId: string): 
   };
 }
 
-/** A line per model, and an indented one per model folder a worker would download, naming its files. */
+/**
+ * A line per model (with the DeepLabCut model it names, for one DeepLabCut runs), and an indented
+ * one per model folder a worker would download, naming its files.
+ */
 function modelLogs(request: JobRequest, spec: TrackJobSpec): ScriptedEvent[] {
   return spec.model_paths.flatMap((id) => {
-    const files = request.models.find((model) => model.id === id)?.files ?? [];
+    const model = request.models.find((m) => m.id === id);
+    const files = model?.files ?? [];
+    const dlc = model?.deeplabcut;
+    const runs = dlc ? ` (DeepLabCut ${dlc.superanimal}: ${dlc.model}, detector ${dlc.detector})` : "";
     const folders = [...filesByFolder(files)].map(([folder, held]) => {
       const named = held.map((file) => `${file.role} ${file.url}`).join("; ");
       return log(`  model folder ${folder || "(top level)"}: ${named}`);
     });
-    return [log(`Model: ${id}`), ...folders];
+    return [log(`Model: ${id}${runs}`), ...folders];
   });
 }
 

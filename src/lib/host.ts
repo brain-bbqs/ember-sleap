@@ -1,16 +1,18 @@
 import { base64ToBytes } from "./base64";
 import {
+  DEEPLABCUT_RUNS_ALONE,
   INLINE_LABELS_REFUSED,
   isTerminalEvent,
   TRAIN_NEEDS_LABELS,
   type ArchiveRef,
   type ComputeClient,
   type JobInput,
+  type JobModel,
   type JobRequest,
 } from "./computeClient";
 import type { ProjectStorage } from "./emberStorage";
 import { fromHostRef, type EmberLocation } from "./hostRef";
-import { listModels, type ModelSource } from "./modelCatalogue";
+import { frameworkOf, listModels, type HostModelCard, type ModelSource } from "./modelCatalogue";
 import { readPredictions } from "./predictions";
 import type {
   HostRef,
@@ -65,7 +67,7 @@ export interface JobContext {
   /** What the latest save of the project a link was opened under wrote, or undefined before a save. */
   latestSave(url: string): ResolvedFile | undefined;
   /** The model cards the page listed, by id. */
-  cards: ReadonlyMap<string, ModelCard>;
+  cards: ReadonlyMap<string, HostModelCard>;
   /** The EMBER asset behind a link, or null. */
   describe(url: string): ArchiveRef | null;
 }
@@ -122,16 +124,24 @@ export function buildJobRequest(spec: JobSpec, project: HostRef | undefined, kno
   } else {
     sent = { ...spec, data_path: input(spec.data_path) };
   }
-  const models =
-    sent.type === "track"
-      ? sent.model_paths.map((id) => {
-          const card = known.cards.get(id);
-          if (!card) throw new Error(`Model ${id} is not in the catalogue this page listed.`);
-          return { id, files: card.files };
-        })
-      : [];
+  const models = sent.type === "track" ? sent.model_paths.map((id) => jobModel(id, known)) : [];
+  if (models.length > 1 && models.some((model) => model.framework !== "sleap-nn")) {
+    throw new Error(DEEPLABCUT_RUNS_ALONE);
+  }
   const location = fromHostRef(project);
   return location ? { spec: sent, inputs, models, project: location } : { spec: sent, inputs, models };
+}
+
+/** A model card the page listed, as a worker fetches and runs it. */
+function jobModel(id: string, known: JobContext): JobModel {
+  const card = known.cards.get(id);
+  if (!card) throw new Error(`Model ${id} is not in the catalogue this page listed.`);
+  const framework = frameworkOf(card);
+  if (framework === "deeplabcut") {
+    if (!card.deeplabcut) throw new Error(`Model ${id} runs on DeepLabCut but names no DeepLabCut model.`);
+    return { id, framework, deeplabcut: card.deeplabcut, files: card.files };
+  }
+  return { id, framework, files: card.files };
 }
 
 /** A project the page opened, and the file its latest save wrote. */
@@ -160,7 +170,7 @@ export function createSleapHost({
   chooseProject,
 }: HostDeps): PageHost {
   const files = new Map<string, ResolvedFile>();
-  const cards = new Map<string, ModelCard>();
+  const cards = new Map<string, HostModelCard>();
   // Track jobs submitted from a project on EMBER, by job id, until each ends: one that has left
   // reports nothing again, however many subscribers hear it or replay its history.
   const tracked = new Map<string, TrackedJob>();
@@ -181,7 +191,7 @@ export function createSleapHost({
 
   async function listAll(query: ModelQuery): Promise<ModelCard[]> {
     // A listing an index entry replaced stays known by its own id, as a train result's model_dir names it.
-    const remember = (card: ModelCard) => cards.set(card.id, card);
+    const remember = (card: HostModelCard) => cards.set(card.id, card);
     const listed = await listModels(modelSources, query, { onWarning: onModelWarning, onReplaced: remember });
     listed.forEach(remember);
     return listed;

@@ -1,4 +1,5 @@
-import type { FileType, JobEvent, JobSpec, JobState, ModelFile } from "./sleapContract";
+import type { DeepLabCutModel } from "./modelCatalogue";
+import type { FileType, JobEvent, JobSpec, JobState, ModelFile, ModelFramework } from "./sleapContract";
 
 /**
  * The central Pennsieve proxy's job API root. Null until the proxy team's API exists (see
@@ -27,16 +28,24 @@ export interface JobInput {
   archive?: ArchiveRef;
 }
 
+/** A model a track job names, as a worker fetches and runs it. */
+export interface JobModel {
+  id: string;
+  /** What runs it: sleap-nn, or DeepLabCut for a SuperAnimal model. */
+  framework: ModelFramework;
+  /** A DeepLabCut model's model zoo names, which DeepLabCut builds the model's config from. */
+  deeplabcut?: DeepLabCutModel;
+  /** Each naming the model folder it goes in (sleap-nn) or its part of the model (DeepLabCut). */
+  files: ModelFile[];
+}
+
 /** What this page sends to compute: the app's own job spec, plus what the spec's URLs are. */
 export interface JobRequest {
   spec: JobSpec;
   /** Every URL the spec names (`labels_path`, `data_path`, ...), with its file type and EMBER asset. */
   inputs: JobInput[];
-  /**
-   * The model card ids in a track job's `model_paths`, expanded to the files the worker fetches,
-   * each naming the model folder it goes in.
-   */
-  models: { id: string; files: ModelFile[] }[];
+  /** The model card ids in a track job's `model_paths`, expanded to what the worker fetches and runs. */
+  models: JobModel[];
   /** The EMBER dandiset results go back to, and the project they came from. */
   project?: { dandisetId: string; path: string };
 }
@@ -55,6 +64,10 @@ export interface ComputeClient {
 /** Why a train spec naming no labels at all is refused. */
 export const TRAIN_NEEDS_LABELS =
   "A training job needs labels: a project saved on EMBER (labels_path) or the labels to train from (labels_content).";
+
+/** Why a track job naming a DeepLabCut model beside any other is refused. */
+export const DEEPLABCUT_RUNS_ALONE =
+  "A DeepLabCut model runs on its own: a track job names one DeepLabCut model, or sleap-nn models only.";
 
 /** Why a train spec still carrying inline labels is refused on its way to compute. */
 export const INLINE_LABELS_REFUSED =

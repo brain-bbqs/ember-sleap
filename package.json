@@ -1,6 +1,6 @@
 {
   "name": "ember-sleap",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Label, train and predict with SLEAP on data in the EMBER archive: the SLEAP web app embedded in a BBQS page that opens and saves on EMBER.",
   "type": "module",
   "license": "MIT",

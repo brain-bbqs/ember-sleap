@@ -523,7 +523,9 @@ export function mountStandIn(el: HTMLElement, options: MountOptions): SleapAppHa
 
   function renderModel(card: ModelCard): HTMLLIElement {
     const item = h("li");
-    const facts = [card.heads.join(", "), card.species, card.license, card.sourceLabel].filter(Boolean).join(" · ");
+    // A DeepLabCut model has no sleap-nn heads to show, so its framework stands in for them.
+    const runs = card.framework === "deeplabcut" ? "DeepLabCut" : card.heads.join(", ");
+    const facts = [runs, card.species, card.license, card.sourceLabel].filter(Boolean).join(" · ");
     const predict = button("sl-button", "Predict");
     predict.dataset.role = "predict";
     // The project open now, by its current link: another may have opened, or the link renewed, since.

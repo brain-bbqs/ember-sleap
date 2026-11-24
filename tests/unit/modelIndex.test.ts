@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 import {
   checkModelIndex,
+  createBundledIndexSource,
   createIndexSource,
   MODEL_INDEX_SCHEMA,
   MODEL_INDEX_URL,
@@ -44,6 +45,33 @@ function hfEntry(overrides: Record<string, unknown> = {}): Record<string, unknow
   };
 }
 
+const DLC_HF = "https://huggingface.co/mwmathis/SuperAnimal/resolve/d443257";
+const DLC_NAMES = {
+  superanimal: "superanimal_topviewmouse",
+  model: "hrnet_w32",
+  detector: "fasterrcnn_resnet50_fpn_v2",
+};
+
+/** A DeepLabCut SuperAnimal entry: its pose and detector checkpoints at the top of a repository. */
+function dlcEntry(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    id: "superanimal-topviewmouse",
+    name: "SuperAnimal-TopViewMouse",
+    version: "d443257",
+    license: "Modified MIT, academic and non-commercial use only",
+    species: "Mus musculus",
+    framework: "deeplabcut",
+    deeplabcut: DLC_NAMES,
+    skeleton: { nodes: ["nose", "tail_base"], edges: [] },
+    source: { huggingface: { repo: "mwmathis/SuperAnimal", revision: "d443257" } },
+    files: [
+      { role: "checkpoint", path: "superanimal_topviewmouse_hrnet_w32.pt", sha256: SHA },
+      { role: "detector", path: "superanimal_topviewmouse_fasterrcnn_resnet50_fpn_v2.pt" },
+    ],
+    ...overrides,
+  };
+}
+
 function index(models: unknown[]): unknown {
   return { schema: MODEL_INDEX_SCHEMA, models };
 }
@@ -75,6 +103,35 @@ describe("parseModelIndex", () => {
         source: { kind: "index", target: { kind: "huggingface", repo: "talmolab/mouse", revision: "v1" } },
       },
     ]);
+  });
+
+  it("resolves a DeepLabCut entry to a card naming its framework, its model and its two checkpoints", () => {
+    const { models, problems } = parseModelIndex(index([dlcEntry()]));
+    expect(problems).toEqual([]);
+    expect(models).toEqual([
+      {
+        id: "index:superanimal-topviewmouse",
+        name: "SuperAnimal-TopViewMouse (d443257)",
+        license: "Modified MIT, academic and non-commercial use only",
+        species: "Mus musculus",
+        framework: "deeplabcut",
+        heads: [],
+        skeleton: { nodes: ["nose", "tail_base"], edges: [] },
+        files: [
+          { role: "checkpoint", folder: "", url: `${DLC_HF}/superanimal_topviewmouse_hrnet_w32.pt`, sha256: SHA },
+          { role: "detector", folder: "", url: `${DLC_HF}/superanimal_topviewmouse_fasterrcnn_resnet50_fpn_v2.pt` },
+        ],
+        source: {
+          kind: "index",
+          target: { kind: "huggingface", repo: "mwmathis/SuperAnimal", revision: "d443257" },
+        },
+        deeplabcut: DLC_NAMES,
+      },
+    ]);
+  });
+
+  it("reads an entry stating sleap-nn as one stating no framework", () => {
+    expect(parseModelIndex(index([hfEntry({ framework: "sleap-nn" })]))).toEqual(parseModelIndex(index([hfEntry()])));
   });
 
   it("encodes the revision and path segments of a Hugging Face URL, and keeps nested folders whole", () => {
@@ -237,6 +294,35 @@ describe("parseModelIndex", () => {
       singleEntry({ files: [...folderFiles("fly"), ...folderFiles("mouse")] }),
       "a model that is not top-down needs one model folder, not 2",
     ],
+    ["an unknown framework", hfEntry({ framework: "mmpose" }), 'framework must be "sleap-nn" or "deeplabcut"'],
+    ["DeepLabCut names on a sleap-nn entry", hfEntry({ deeplabcut: DLC_NAMES }), "deeplabcut is only for an entry"],
+    [
+      "a detector in a sleap-nn entry",
+      singleEntry({ files: [...folderFiles(""), { role: "detector", path: "detector.pt" }] }),
+      'file role must be "config" or "checkpoint" in a sleap-nn entry',
+    ],
+    ["heads on a DeepLabCut entry", dlcEntry({ heads: ["single_instance"] }), "a DeepLabCut entry leaves them out"],
+    ["a DeepLabCut entry without its names", dlcEntry({ deeplabcut: undefined }), "deeplabcut must be"],
+    [
+      "a DeepLabCut entry missing its detector's name",
+      dlcEntry({ deeplabcut: { superanimal: "superanimal_topviewmouse", model: "hrnet_w32" } }),
+      "deeplabcut must be",
+    ],
+    [
+      "a DeepLabCut name that is not a model zoo name",
+      dlcEntry({ deeplabcut: { ...DLC_NAMES, model: "HRNet W32" } }),
+      "deeplabcut must be",
+    ],
+    [
+      "a config in a DeepLabCut entry",
+      dlcEntry({ files: [{ role: "config", path: "pose_cfg.yaml" }] }),
+      'file role must be "checkpoint" or "detector" in a deeplabcut entry',
+    ],
+    [
+      "a DeepLabCut entry without its detector",
+      dlcEntry({ files: [{ role: "checkpoint", path: "pose.pt" }] }),
+      "a DeepLabCut model needs exactly one pose checkpoint and one detector checkpoint",
+    ],
   ])("leaves out an entry with %s and says why", (_label, entry, problem) => {
     const { models, problems } = parseModelIndex(index([entry, hfEntry({ id: "good" })]));
     expect(models.map((m) => m.id)).toEqual(["index:good"]);
@@ -278,6 +364,54 @@ describe("the documented examples", () => {
       .filter((json) => json.includes(MODEL_INDEX_SCHEMA));
     expect(blocks.length).toBeGreaterThan(0);
     for (const json of blocks) expect(checkModelIndex(json).problems).toEqual([]);
+  });
+});
+
+describe("the page's own copy of the index (src/models.json)", () => {
+  const read = () => readFileSync(new URL("../../src/models.json", import.meta.url), "utf8");
+
+  it("lists SuperAnimal's mouse and quadruped models, run by DeepLabCut, without problems", () => {
+    const { models, problems } = checkModelIndex(read());
+    expect(problems).toEqual([]);
+    expect(models.map((m) => [m.id, m.framework, m.deeplabcut?.superanimal])).toEqual([
+      ["index:superanimal-topviewmouse-hrnet-w32", "deeplabcut", "superanimal_topviewmouse"],
+      ["index:superanimal-quadruped-hrnet-w32", "deeplabcut", "superanimal_quadruped"],
+    ]);
+  });
+
+  it("pins every entry to a commit and every file to its checksum", () => {
+    const { models } = checkModelIndex(read());
+    for (const card of models) {
+      const target = card.source?.kind === "index" ? card.source.target : undefined;
+      expect(target?.kind === "huggingface" && target.revision).toMatch(/^[0-9a-f]{40}$/);
+      for (const file of card.files) expect(file.sha256).toMatch(/^[0-9a-f]{64}$/);
+    }
+  });
+
+  it("names each model's keypoints as DeepLabCut does (27 for the mouse, 39 for quadrupeds)", () => {
+    const { models } = checkModelIndex(read());
+    expect(models.map((m) => m.skeleton?.nodes.length)).toEqual([27, 39]);
+  });
+});
+
+describe("createBundledIndexSource", () => {
+  it("lists the cards of an index it holds", async () => {
+    const cards = await createBundledIndexSource(index([hfEntry()]), vi.fn()).list({});
+    expect(cards.map((c) => c.id)).toEqual(["index:mouse-topdown"]);
+  });
+
+  it("reports entries it left out, warning on the console by default", async () => {
+    const onProblems = vi.fn();
+    await createBundledIndexSource(index([hfEntry({ heads: [] }), dlcEntry()]), onProblems).list({});
+    expect(onProblems).toHaveBeenCalledWith([expect.stringContaining("heads must be")]);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    await createBundledIndexSource(index([hfEntry({ heads: [] })])).list({});
+    expect(warn).toHaveBeenCalledWith("Model index entries left out:", [expect.stringContaining("heads must be")]);
+    warn.mockRestore();
+  });
+
+  it("fails as a failed fetch would when what it holds is not an index", async () => {
+    await expect(createBundledIndexSource({ models: [] }, vi.fn()).list({})).rejects.toThrow(/Not a model index/);
   });
 });
 

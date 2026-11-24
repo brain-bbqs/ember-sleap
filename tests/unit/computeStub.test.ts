@@ -205,7 +205,7 @@ describe("createStubCompute", () => {
     const request: JobRequest = {
       ...trackRequest,
       spec: { type: "track", data_path: VIDEO_URL, model_paths: [topDown.id, single.id, "hf:lab/unexpanded"] },
-      models: [single, topDown].map(({ id, files }) => ({ id, files })),
+      models: [single, topDown].map(({ id, files }) => ({ id, framework: "sleap-nn" as const, files })),
     };
     const { jobId } = await stub.submit(request);
     const lines: unknown[] = [];
@@ -221,6 +221,41 @@ describe("createStubCompute", () => {
       "Model: mock:single-instance",
       "  model folder (top level): config data:,mock-single-instance-config; checkpoint data:,mock-single-instance-checkpoint",
       "Model: hf:lab/unexpanded",
+    ]);
+  });
+
+  it("names the DeepLabCut model a DeepLabCut job runs, and its pose and detector checkpoints", async () => {
+    const { stub, drain } = steppedStub();
+    const id = "index:superanimal-topviewmouse-hrnet-w32";
+    const request: JobRequest = {
+      ...trackRequest,
+      spec: { type: "track", data_path: VIDEO_URL, model_paths: [id] },
+      models: [
+        {
+          id,
+          framework: "deeplabcut",
+          deeplabcut: {
+            superanimal: "superanimal_topviewmouse",
+            model: "hrnet_w32",
+            detector: "fasterrcnn_resnet50_fpn_v2",
+          },
+          files: [
+            { role: "checkpoint", folder: "", url: "https://hf.test/pose.pt" },
+            { role: "detector", folder: "", url: "https://hf.test/detector.pt" },
+          ],
+        },
+      ],
+    };
+    const { jobId } = await stub.submit(request);
+    const lines: unknown[] = [];
+    stub.subscribe(jobId, (e) => {
+      if (e.topic === "job.log") lines.push(e.data.line);
+    });
+    drain();
+
+    expect(lines.slice(1)).toEqual([
+      `Model: ${id} (DeepLabCut superanimal_topviewmouse: hrnet_w32, detector fasterrcnn_resnet50_fpn_v2)`,
+      "  model folder (top level): checkpoint https://hf.test/pose.pt; detector https://hf.test/detector.pt",
     ]);
   });
 

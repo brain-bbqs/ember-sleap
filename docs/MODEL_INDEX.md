@@ -4,11 +4,13 @@ The page's model picker merges three sources, in this order: the central index, 
 When two sources name the same card id, the first one wins.
 Index entries also replace the direct listing of a model on Hugging Face or EMBER whose every model folder they name, whatever revision each names: an entry's metadata is curated and its revision pinned.
 The browser reads only small metadata files from each source; weights go straight from Hugging Face or S3 to the compute container.
+Most models are sleap-nn's; the index can also list DeepLabCut's pretrained SuperAnimal models, which compute runs with DeepLabCut instead ([Frameworks](#frameworks)).
 
 The code is `src/lib/modelIndex.ts`, `src/lib/modelHuggingFace.ts`, `src/lib/modelEmber.ts` and the merge in `src/lib/modelCatalogue.ts`.
 
 ## Model folders
 
+This section is about sleap-nn models; a DeepLabCut model is two checkpoints instead ([Frameworks](#frameworks)).
 sleap-nn loads a model from a folder holding one head's `training_config.yaml` and `best.ckpt`.
 A single-head model (`single_instance`, `bottomup`, or a lone `centroid` or `centered_instance`) is one folder.
 A top-down model is two, its centroid folder and its centered-instance folder, and inference needs both.
@@ -55,7 +57,7 @@ The picker's text search also matches the Hugging Face repository a card is kept
 ## The central index: `models.json`
 
 A curated list in a designated EMBER dandiset.
-That dandiset does not exist yet, so `MODEL_INDEX_URL` in `src/lib/modelIndex.ts` is `null` and the source is off until it does.
+That dandiset does not exist yet, so `MODEL_INDEX_URL` in `src/lib/modelIndex.ts` is `null`, and until it does the page reads its own copy instead ([`src/models.json`](#the-pages-own-copy-srcmodelsjson)).
 
 [`examples/models.json`](examples/models.json) is a complete, valid index: a single-folder model on Hugging Face and a two-folder top-down model on EMBER.
 Its repository, dandiset and checksums are illustrative.
@@ -109,7 +111,7 @@ The top-down entry:
 }
 ```
 
-- `id`, `name`, `version`, `license`, `heads`, `source` and `files` are required; `species` and `skeleton` are optional.
+- `id`, `name`, `version`, `license`, `source` and `files` are required, and so are `heads` for a sleap-nn model; `species`, `skeleton` and `framework` are optional.
 - `source` names exactly one of:
   - `{ "huggingface": { "repo": "owner/name", "revision": "<tag, branch or commit>" } }`; pin a tag or commit so the entry cannot change under its checksum.
   - `{ "ember": { "dandiset": "000123", "path": "derivatives/sleap/models/<model-id>" } }`.
@@ -120,12 +122,81 @@ The top-down entry:
 - The card's id is `index:<id>`, and the version is shown beside the name, as `Mouse top-down (2.1.0)`.
 - Entries must have unique ids; every entry after the first with an id is left out, even when the first is too.
 
+- `framework` is `"sleap-nn"`, the default, or `"deeplabcut"` ([Frameworks](#frameworks)).
+
 A Hugging Face file becomes `https://huggingface.co/<repo>/resolve/<revision>/<path>`.
 An EMBER file becomes the reference `ember://<dandiset>/<path>/<file path>`, each path segment percent-encoded, since the archive has no URL per asset path without an API lookup.
 The compute side resolves an `ember://` reference against the archive's draft assets (`?path=` on the assets listing) and downloads it with the service account.
 
 A malformed entry never empties the catalogue: it is left out and named in a warning, and the rest of the index is used.
 A document that is not a v1 index at all (wrong `schema`, no `models` array) fails the whole source, which the picker reports and skips.
+
+### Frameworks
+
+An entry's `framework` says what runs its model.
+Only the index lists DeepLabCut models; Hugging Face and EMBER list sleap-nn model folders only.
+
+| `framework`          | `heads`  | Names the model by                               | `files[].role`                                       |
+| -------------------- | -------- | ------------------------------------------------ | ---------------------------------------------------- |
+| `sleap-nn` (default) | required | its model folders                                | a `config` and a `checkpoint` per model folder       |
+| `deeplabcut`         | left out | `deeplabcut`: `{ superanimal, model, detector }` | one `checkpoint` (the pose model) and one `detector` |
+
+- `deeplabcut` holds DeepLabCut's model zoo names: the SuperAnimal (`superanimal_topviewmouse`), its pose network (`hrnet_w32`) and its detector (`fasterrcnn_resnet50_fpn_v2`), each in lowercase letters, digits and underscores.
+  DeepLabCut builds the model's config from these names, so they must match the two checkpoints the entry pins.
+- A DeepLabCut model is for inference only: nothing here trains it, and a track job runs it on its own ([COMPUTE_API.md](COMPUTE_API.md#inputs-models-and-results)).
+- Its card reaches the app with `framework: "deeplabcut"` and no heads, and the picker shows "DeepLabCut" where a sleap-nn model shows its heads.
+- Searching the picker for "deeplabcut" finds these models.
+
+SuperAnimal-TopViewMouse, as the page's own copy lists it (less its 27 keypoints):
+
+```json
+{
+  "schema": "ember-sleap.models/v1",
+  "models": [
+    {
+      "id": "superanimal-topviewmouse-hrnet-w32",
+      "name": "SuperAnimal-TopViewMouse, HRNet-w32",
+      "version": "d443257",
+      "license": "Modified MIT: academic, non-commercial use only",
+      "species": "Mus musculus, filmed from above",
+      "framework": "deeplabcut",
+      "deeplabcut": {
+        "superanimal": "superanimal_topviewmouse",
+        "model": "hrnet_w32",
+        "detector": "fasterrcnn_resnet50_fpn_v2"
+      },
+      "source": {
+        "huggingface": {
+          "repo": "mwmathis/DeepLabCutModelZoo-SuperAnimal-TopViewMouse",
+          "revision": "d443257e4b1145f7439e0953c2015d60fcdc1185"
+        }
+      },
+      "files": [
+        {
+          "role": "checkpoint",
+          "path": "superanimal_topviewmouse_hrnet_w32.pt",
+          "sha256": "5e7ed2b4e568fa93e2b1404251f9b060f9bd3ff5d68712f57c8ddb766d0cf6ed"
+        },
+        {
+          "role": "detector",
+          "path": "superanimal_topviewmouse_fasterrcnn_resnet50_fpn_v2.pt",
+          "sha256": "1175e31a5486731734948da55e4b25adcee84da4e36eafc5768a771809d536e5"
+        }
+      ]
+    }
+  ]
+}
+```
+
+### The page's own copy: `src/models.json`
+
+Until the index dandiset exists, the page reads `src/models.json` from its bundle as it would read the published index, and lists its models in the `?test` mocks as well.
+It holds DeepLabCut's SuperAnimal-TopViewMouse and SuperAnimal-Quadruped models, each the HRNet-w32 pose network with the Faster R-CNN ResNet-50 FPN v2 detector, a pairing DeepLabCut's model zoo serves (its other pose networks and detectors can be added the same way).
+Each is pinned to its Hugging Face commit and every file to its SHA-256, and its keypoints are DeepLabCut's (27 for the mouse, 39 for quadrupeds; DeepLabCut defines no edges between them).
+Their weights are licensed for academic, non-commercial use only (a modified MIT license, in each model card), and the picker shows that as their license.
+SuperAnimal-Bird is left out because its model card states no license.
+A unit test reads the file as `npm run check-model-index` does, so it cannot go out invalid.
+Once the dandiset exists, this file is the first index published to it.
 
 ### Checking an index before publishing it
 

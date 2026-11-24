@@ -1,4 +1,4 @@
-import type { ModelCard, ModelFile, ModelHead, ModelQuery, ModelSkeleton } from "./sleapContract";
+import type { ModelCard, ModelFile, ModelFramework, ModelHead, ModelQuery, ModelSkeleton } from "./sleapContract";
 
 /** Where a model's files are kept. */
 export type ModelLocation =
@@ -8,12 +8,25 @@ export type ModelLocation =
 export type ModelCardSource = ModelLocation | { kind: "index"; target: ModelLocation };
 
 /**
+ * A DeepLabCut SuperAnimal model by its model zoo names, which DeepLabCut builds the model's config
+ * from: the SuperAnimal (e.g. "superanimal_topviewmouse"), its pose network (e.g. "hrnet_w32") and
+ * its detector (e.g. "fasterrcnn_resnet50_fpn_v2"). The card's files are those two checkpoints.
+ */
+export interface DeepLabCutModel {
+  superanimal: string;
+  model: string;
+  detector: string;
+}
+
+/**
  * A card as this page's model sources list it. `source` is the host's own: the merge in listModels
  * reads it, and the app only sees the words `sourceLabel` puts it in. Each file's folder is relative
- * to the location `source` names (the repository root, or the EMBER folder).
+ * to the location `source` names (the repository root, or the EMBER folder). `deeplabcut` names a
+ * DeepLabCut card's model for compute; the app only sees its `framework`.
  */
 export interface HostModelCard extends ModelCard {
   source?: ModelCardSource;
+  deeplabcut?: DeepLabCutModel;
 }
 
 /** One place models are found: Hugging Face, EMBER files, or the central index. */
@@ -38,6 +51,17 @@ export const MODEL_HEADS: readonly ModelHead[] = ["centroid", "centered_instance
 
 export function isModelHead(value: unknown): value is ModelHead {
   return typeof value === "string" && (MODEL_HEADS as readonly string[]).includes(value);
+}
+
+export const MODEL_FRAMEWORKS: readonly ModelFramework[] = ["sleap-nn", "deeplabcut"];
+
+export function isModelFramework(value: unknown): value is ModelFramework {
+  return typeof value === "string" && (MODEL_FRAMEWORKS as readonly string[]).includes(value);
+}
+
+/** The framework that runs a card: its own, or sleap-nn for a card that names none. */
+export function frameworkOf(card: ModelCard): ModelFramework {
+  return card.framework ?? "sleap-nn";
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -129,11 +153,21 @@ function describeFolder(folder: string): string {
 }
 
 /**
- * Why a card's files cannot run as its heads say, or null when they can. Every model folder needs
- * exactly one config and one checkpoint, a top-down model (centroid and centered_instance) runs from
- * two folders, one per head, and any other model from one.
+ * Why a card's files cannot run as its heads say, or null when they can. For sleap-nn, every model
+ * folder needs exactly one config and one checkpoint, a top-down model (centroid and
+ * centered_instance) runs from two folders, one per head, and any other model from one. A DeepLabCut
+ * model is its pose checkpoint and its detector checkpoint, wherever each is kept.
  */
-export function modelFilesProblem(heads: readonly ModelHead[], files: readonly ModelFile[]): string | null {
+export function modelFilesProblem(
+  heads: readonly ModelHead[],
+  files: readonly ModelFile[],
+  framework: ModelFramework = "sleap-nn",
+): string | null {
+  if (framework === "deeplabcut") {
+    const count = (role: ModelFile["role"]) => files.filter((file) => file.role === role).length;
+    const complete = files.length === 2 && count("checkpoint") === 1 && count("detector") === 1;
+    return complete ? null : "a DeepLabCut model needs exactly one pose checkpoint and one detector checkpoint";
+  }
   const folders = filesByFolder(files);
   if (folders.size === 0) return "a model needs at least one model folder";
   const incomplete = [...folders].filter(([, held]) => !isCompleteFolder(held)).map(([name]) => describeFolder(name));
@@ -190,7 +224,10 @@ export function matchesText(card: HostModelCard, text: string): boolean {
   // The repository too, so an index entry is still found by the Hugging Face id it replaced.
   const location = card.source && locationOf(card.source);
   const repo = location?.kind === "huggingface" ? location.repo : "";
-  return [card.id, card.name, card.species ?? "", repo].some((field) => field.toLowerCase().includes(needle));
+  // A card's own framework too, so "deeplabcut" finds DeepLabCut's (sleap-nn, the default, is not named).
+  return [card.id, card.name, card.species ?? "", repo, card.framework ?? ""].some((field) =>
+    field.toLowerCase().includes(needle),
+  );
 }
 
 export type SkeletonFit = "match" | "unknown" | "mismatch";

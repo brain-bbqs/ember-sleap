@@ -76,10 +76,11 @@ export interface ModelCard {
   name: string;
   license?: string;
   species?: string;
+  framework?: "sleap-nn" | "deeplabcut"; // absent for sleap-nn
   heads: ("centroid" | "centered_instance" | "bottomup" | "single_instance")[];
   skeleton?: { nodes: string[]; edges: [string, string][] };
   files: {
-    role: "config" | "checkpoint";
+    role: "config" | "checkpoint" | "detector";
     folder: string;                     // the model folder: "" for a single one; a top-down
                                         // model has "centroid" and "centered_instance"
     url: string;
@@ -93,7 +94,8 @@ export interface ModelCard {
 
 `TrainJobSpec` and `TrackJobSpec` are the existing types in `src/lib/sleapConnect.ts`, and `JobEvent` would mirror the events the job viewer already consumes. That way the training and inference dialogs and the job viewer stay exactly as they are; only where a job goes changes.
 
-A model card names the model folder of each file because sleap-nn loads a model one folder per head: a top-down model is a centroid folder and a centered-instance folder, and inference needs both, so the host sends a worker every folder of the model the picker chose; any other model is one folder. `sourceLabel` is the host's own words for where it found a model (for example "from Hugging Face talmolab/mice-topdown"), which the picker shows beside it as it is and never parses or fetches.
+A model card names the model folder of each file because sleap-nn loads a model one folder per head: a top-down model is a centroid folder and a centered-instance folder, and inference needs both, so the host sends a worker every folder of the model the picker chose; any other model is one folder. A card with `framework: "deeplabcut"` is one of DeepLabCut's pretrained SuperAnimal models, which the host runs with DeepLabCut: it declares no heads, its files are its pose `checkpoint` and its `detector`, and it is for inference only, so the app would offer it to predict with but never to train from.
+`sourceLabel` is the host's own words for where it found a model (for example "from Hugging Face talmolab/mice-topdown"), which the picker shows beside it as it is and never parses or fetches.
 
 ## What we'd guarantee
 

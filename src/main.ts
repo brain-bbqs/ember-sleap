@@ -30,7 +30,7 @@ import { createMemoryStorage } from "./lib/memoryStorage";
 import type { ModelSource } from "./lib/modelCatalogue";
 import { createEmberModelSource } from "./lib/modelEmber";
 import { createHuggingFaceSource } from "./lib/modelHuggingFace";
-import { createIndexSource, MODEL_INDEX_URL } from "./lib/modelIndex";
+import { createBundledIndexSource, createIndexSource, MODEL_INDEX_URL } from "./lib/modelIndex";
 import { createOAuth } from "./lib/oauth";
 import { settingsStore, STORAGE_KEY } from "./lib/settings";
 import {
@@ -57,6 +57,8 @@ import { createOverwritePrompt } from "./ui/overwriteDialog";
 import { createPredictionsList } from "./ui/predictionsList";
 import { renderProjects } from "./ui/projectList";
 import { loadSleapComponent, sleapAppBaseUrl } from "./ui/sleapComponent";
+// The model index's entries so far (SuperAnimal's), served from the page until the index dandiset exists.
+import bundledIndex from "./models.json";
 
 const shell = getShell();
 const els = getElements();
@@ -280,9 +282,10 @@ function pageCompute(): { client: ComputeClient; trained: ModelSource[] } {
 }
 
 function modelSources(trained: ModelSource[]): ModelSource[] {
-  if (mocked) return [mockModelSource, ...trained];
-  const sources: ModelSource[] = [];
-  if (MODEL_INDEX_URL) sources.push(createIndexSource({ url: MODEL_INDEX_URL }));
+  // The page's own copy of the index needs no network, so the mocks list its models too.
+  const bundled = createBundledIndexSource(bundledIndex);
+  if (mocked) return [mockModelSource, bundled, ...trained];
+  const sources: ModelSource[] = [MODEL_INDEX_URL ? createIndexSource({ url: MODEL_INDEX_URL }) : bundled];
   sources.push(
     createHuggingFaceSource({}),
     // Resolved per listing, so the models are read with the token saves use, and with none once signed

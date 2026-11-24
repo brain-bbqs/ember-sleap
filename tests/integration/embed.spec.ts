@@ -72,6 +72,19 @@ test.describe("the embedded SLEAP app", () => {
     await expect(role(page, "job-log")).toContainText("Model: ember:mock/stub-model-1");
   });
 
+  test("lists SuperAnimal from the page's model index, and predicts with it through DeepLabCut", async ({ page }) => {
+    await openMockProject(page);
+    await role(page, "list-models").click();
+    const superanimal = role(page, "models").locator("li", { hasText: "SuperAnimal-TopViewMouse" });
+    await expect(superanimal).toContainText("DeepLabCut · Mus musculus, filmed from above");
+    await expect(superanimal).toContainText("Modified MIT: academic, non-commercial use only");
+    await superanimal.locator('[data-role="predict"]').click();
+    await expect(role(page, "job-state")).toHaveText("completed");
+    await expect(role(page, "job-log")).toContainText(
+      "Model: index:superanimal-topviewmouse-hrnet-w32 (DeepLabCut superanimal_topviewmouse: hrnet_w32, detector fasterrcnn_resnet50_fpn_v2)",
+    );
+  });
+
   test("predicts with a top-down model, sending both of its model folders", async ({ page }) => {
     await openMockProject(page);
     await role(page, "list-models").click();

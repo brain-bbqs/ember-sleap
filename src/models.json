@@ -1,0 +1,143 @@
+{
+  "schema": "ember-sleap.models/v1",
+  "models": [
+    {
+      "id": "superanimal-topviewmouse-hrnet-w32",
+      "name": "SuperAnimal-TopViewMouse, HRNet-w32",
+      "version": "d443257",
+      "license": "Modified MIT: academic, non-commercial use only",
+      "species": "Mus musculus, filmed from above",
+      "framework": "deeplabcut",
+      "deeplabcut": {
+        "superanimal": "superanimal_topviewmouse",
+        "model": "hrnet_w32",
+        "detector": "fasterrcnn_resnet50_fpn_v2"
+      },
+      "skeleton": {
+        "nodes": [
+          "nose",
+          "left_ear",
+          "right_ear",
+          "left_ear_tip",
+          "right_ear_tip",
+          "left_eye",
+          "right_eye",
+          "neck",
+          "mid_back",
+          "mouse_center",
+          "mid_backend",
+          "mid_backend2",
+          "mid_backend3",
+          "tail_base",
+          "tail1",
+          "tail2",
+          "tail3",
+          "tail4",
+          "tail5",
+          "left_shoulder",
+          "left_midside",
+          "left_hip",
+          "right_shoulder",
+          "right_midside",
+          "right_hip",
+          "tail_end",
+          "head_midpoint"
+        ],
+        "edges": []
+      },
+      "source": {
+        "huggingface": {
+          "repo": "mwmathis/DeepLabCutModelZoo-SuperAnimal-TopViewMouse",
+          "revision": "d443257e4b1145f7439e0953c2015d60fcdc1185"
+        }
+      },
+      "files": [
+        {
+          "role": "checkpoint",
+          "path": "superanimal_topviewmouse_hrnet_w32.pt",
+          "sha256": "5e7ed2b4e568fa93e2b1404251f9b060f9bd3ff5d68712f57c8ddb766d0cf6ed"
+        },
+        {
+          "role": "detector",
+          "path": "superanimal_topviewmouse_fasterrcnn_resnet50_fpn_v2.pt",
+          "sha256": "1175e31a5486731734948da55e4b25adcee84da4e36eafc5768a771809d536e5"
+        }
+      ]
+    },
+    {
+      "id": "superanimal-quadruped-hrnet-w32",
+      "name": "SuperAnimal-Quadruped, HRNet-w32",
+      "version": "1ad30fb",
+      "license": "Modified MIT: academic, non-commercial use only",
+      "species": "Quadrupeds, filmed from the side",
+      "framework": "deeplabcut",
+      "deeplabcut": {
+        "superanimal": "superanimal_quadruped",
+        "model": "hrnet_w32",
+        "detector": "fasterrcnn_resnet50_fpn_v2"
+      },
+      "skeleton": {
+        "nodes": [
+          "nose",
+          "upper_jaw",
+          "lower_jaw",
+          "mouth_end_right",
+          "mouth_end_left",
+          "right_eye",
+          "right_earbase",
+          "right_earend",
+          "right_antler_base",
+          "right_antler_end",
+          "left_eye",
+          "left_earbase",
+          "left_earend",
+          "left_antler_base",
+          "left_antler_end",
+          "neck_base",
+          "neck_end",
+          "throat_base",
+          "throat_end",
+          "back_base",
+          "back_end",
+          "back_middle",
+          "tail_base",
+          "tail_end",
+          "front_left_thai",
+          "front_left_knee",
+          "front_left_paw",
+          "front_right_thai",
+          "front_right_knee",
+          "front_right_paw",
+          "back_left_paw",
+          "back_left_thai",
+          "back_right_thai",
+          "back_left_knee",
+          "back_right_knee",
+          "back_right_paw",
+          "belly_bottom",
+          "body_middle_right",
+          "body_middle_left"
+        ],
+        "edges": []
+      },
+      "source": {
+        "huggingface": {
+          "repo": "mwmathis/DeepLabCutModelZoo-SuperAnimal-Quadruped",
+          "revision": "1ad30fb80cd666f1e5c91578d1cf63bccfa84f80"
+        }
+      },
+      "files": [
+        {
+          "role": "checkpoint",
+          "path": "superanimal_quadruped_hrnet_w32.pt",
+          "sha256": "a42e58d56bb32f8b4f4fe17ea9ed9511cebc7b7949ac56b97fa6f3a49587c31e"
+        },
+        {
+          "role": "detector",
+          "path": "superanimal_quadruped_fasterrcnn_resnet50_fpn_v2.pt",
+          "sha256": "8c723bc3c357f9bfe87d3a23c30218be5d450d2289fd1e33f115327cf6c53d54"
+        }
+      ]
+    }
+  ]
+}

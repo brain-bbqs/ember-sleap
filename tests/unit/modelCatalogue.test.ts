@@ -3,6 +3,8 @@ import {
   describeSource,
   filesByFolder,
   folderOf,
+  frameworkOf,
+  isModelFramework,
   isModelHead,
   listModels,
   matchesText,
@@ -33,6 +35,12 @@ function folder(name: string, id = "m"): ModelFile[] {
 const config = (name: string): ModelFile => folder(name)[0];
 const checkpoint = (name: string): ModelFile => folder(name)[1];
 
+/** A DeepLabCut SuperAnimal model's two checkpoints: the pose model and the detector. */
+const DLC_FILES: ModelFile[] = [
+  { role: "checkpoint", folder: "", url: "https://x/superanimal_topviewmouse_hrnet_w32.pt" },
+  { role: "detector", folder: "", url: "https://x/superanimal_topviewmouse_fasterrcnn_resnet50_fpn_v2.pt" },
+];
+
 function source(name: string, cards: HostModelCard[] | Error): ModelSource {
   return {
     name,
@@ -56,6 +64,25 @@ describe("isModelHead", () => {
     [3, false],
   ])("%s -> %s", (value, expected) => {
     expect(isModelHead(value)).toBe(expected);
+  });
+});
+
+describe("isModelFramework", () => {
+  it.each([
+    ["sleap-nn", true],
+    ["deeplabcut", true],
+    ["DeepLabCut", false],
+    ["mmpose", false],
+    [undefined, false],
+  ])("%s -> %s", (value, expected) => {
+    expect(isModelFramework(value)).toBe(expected);
+  });
+});
+
+describe("frameworkOf", () => {
+  it("is a card's own framework, or sleap-nn for a card naming none", () => {
+    expect(frameworkOf(card("a"))).toBe("sleap-nn");
+    expect(frameworkOf(card("b", { framework: "deeplabcut", heads: [], files: DLC_FILES }))).toBe("deeplabcut");
   });
 });
 
@@ -209,6 +236,26 @@ describe("modelFilesProblem", () => {
   ] as const)("%s -> %j", (_label, heads, files, expected) => {
     expect(modelFilesProblem(heads, files)).toBe(expected);
   });
+
+  const dlcProblem = "a DeepLabCut model needs exactly one pose checkpoint and one detector checkpoint";
+  it.each([
+    ["its pose and detector checkpoints", DLC_FILES, null],
+    ["the two in folders of their own", DLC_FILES.map((file, i) => ({ ...file, folder: ["pose", "det"][i] })), null],
+    ["no detector", [DLC_FILES[0]], dlcProblem],
+    ["no pose checkpoint", [DLC_FILES[1]], dlcProblem],
+    ["two detectors", [DLC_FILES[1], DLC_FILES[1]], dlcProblem],
+    ["a sleap-nn model folder instead", folder(""), dlcProblem],
+    ["a config beside the two", [...DLC_FILES, config("")], dlcProblem],
+  ])("a DeepLabCut model with %s -> %j", (_label, files, expected) => {
+    expect(modelFilesProblem([], files, "deeplabcut")).toBe(expected);
+  });
+
+  it("holds a sleap-nn model's folders to a config and a checkpoint, never a detector", () => {
+    const detector: ModelFile = { role: "detector", folder: "", url: "https://x/m/detector.pt" };
+    expect(modelFilesProblem(["single_instance"], [config(""), detector], "sleap-nn")).toBe(
+      "the top-level model folder must hold exactly one config and one checkpoint",
+    );
+  });
 });
 
 describe("matchesText", () => {
@@ -227,6 +274,12 @@ describe("matchesText", () => {
 
   it("does not match on a species the card lacks", () => {
     expect(matchesText(card("a"), "musculus")).toBe(false);
+  });
+
+  it("matches a card's framework when it names one, and never names sleap-nn's", () => {
+    const superanimal = card("index:superanimal", { framework: "deeplabcut", heads: [], files: DLC_FILES });
+    expect(matchesText(superanimal, "DeepLabCut")).toBe(true);
+    expect(matchesText(mouse, "sleap-nn")).toBe(false);
   });
 
   it.each([

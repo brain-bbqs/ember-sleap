@@ -3,7 +3,11 @@
 // with in-memory saves, fixed models and the compute stub, and nothing reaching the network.
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { MOCK_MODELS, MOCK_PREDICTIONS_PATH, MOCK_PROJECT_PATH } from "../../src/lib/testInjection";
+import bundledIndex from "../../src/models.json";
 import { bootMain, el, role } from "./helpers/mainHarness";
+
+/** The fixed models, then the models in the page's own copy of the index (SuperAnimal's). */
+const LISTED = MOCK_MODELS.length + bundledIndex.models.length;
 
 beforeAll(async () => {
   // data: URLs are the one thing the mock project reads; everything else must stay offline.
@@ -49,10 +53,15 @@ describe("?test&mock_project", () => {
     );
   });
 
-  it("lists the fixed models, a top-down one among them", async () => {
+  it("lists the fixed models, a top-down one among them, and the index's SuperAnimal models", async () => {
     role("list-models").click();
-    await vi.waitFor(() => expect(document.querySelectorAll('[data-role="predict"]').length).toBe(MOCK_MODELS.length));
+    await vi.waitFor(() => expect(document.querySelectorAll('[data-role="predict"]').length).toBe(LISTED));
     expect(role("models").textContent).toContain("Test injection model (top-down) centroid, centered_instance");
+    expect(role("models").textContent).toContain(
+      "SuperAnimal-TopViewMouse, HRNet-w32 (d443257) DeepLabCut · Mus musculus, filmed from above · " +
+        "Modified MIT: academic, non-commercial use only · " +
+        "from the model index (Hugging Face mwmathis/DeepLabCutModelZoo-SuperAnimal-TopViewMouse)",
+    );
   });
 
   it("runs a training job on the stub, on what the save wrote, and streams it into the job view", async () => {
@@ -65,9 +74,9 @@ describe("?test&mock_project", () => {
   it("lists the model it trained beside the fixed ones, and predicts with it", async () => {
     role("list-models").click();
     const predicts = () => document.querySelectorAll<HTMLButtonElement>('[data-role="predict"]');
-    await vi.waitFor(() => expect(predicts().length).toBe(MOCK_MODELS.length + 1));
+    await vi.waitFor(() => expect(predicts().length).toBe(LISTED + 1));
     expect(role("models").textContent).toContain("stub-model-1 (trained here on the stub)");
-    predicts()[MOCK_MODELS.length].click();
+    predicts()[LISTED].click();
     await vi.waitFor(() => expect(role("job-id").textContent).toBe("Job stub-2"));
     await vi.waitFor(() => expect(role("job-state").textContent).toBe("completed"), { timeout: 5000 });
     expect(role("job-log").textContent).toContain("Model: ember:mock/stub-model-1");
@@ -99,7 +108,7 @@ describe("?test&mock_project", () => {
     role("list-models").click();
     const predicts = () => document.querySelectorAll<HTMLButtonElement>('[data-role="predict"]');
     // Beside the models trained by the two training jobs so far.
-    await vi.waitFor(() => expect(predicts().length).toBe(MOCK_MODELS.length + 2));
+    await vi.waitFor(() => expect(predicts().length).toBe(LISTED + 2));
     expect(role("models").textContent).toContain("from EMBER dandiset mock");
     predicts()[1].click();
     await vi.waitFor(() => expect(role("job-id").textContent).toBe("Job stub-4"));
@@ -107,6 +116,28 @@ describe("?test&mock_project", () => {
     const log = role("job-log").textContent;
     expect(log).toContain("Model: mock:top-down\n  model folder centroid: config data:,mock-centroid-config;");
     expect(log).toContain("  model folder centered_instance: config data:,mock-centered-instance-config;");
+  });
+
+  it("predicts with SuperAnimal, sending compute the DeepLabCut model and its pinned checkpoints", async () => {
+    role("list-models").click();
+    await vi.waitFor(() => expect(document.querySelectorAll('[data-role="predict"]').length).toBe(LISTED + 2));
+    const superanimal = [...role("models").querySelectorAll("li")].find((item) =>
+      item.textContent?.startsWith("SuperAnimal-TopViewMouse"),
+    );
+    superanimal!.querySelector<HTMLButtonElement>('[data-role="predict"]')!.click();
+    await vi.waitFor(() => expect(role("job-id").textContent).toBe("Job stub-5"));
+    await vi.waitFor(() => expect(role("job-state").textContent).toBe("completed"), { timeout: 5000 });
+    const log = role("job-log").textContent;
+    expect(log).toContain(
+      "Model: index:superanimal-topviewmouse-hrnet-w32 " +
+        "(DeepLabCut superanimal_topviewmouse: hrnet_w32, detector fasterrcnn_resnet50_fpn_v2)",
+    );
+    const repo = "https://huggingface.co/mwmathis/DeepLabCutModelZoo-SuperAnimal-TopViewMouse/resolve/";
+    expect(log).toMatch(
+      new RegExp(
+        `checkpoint ${repo}[0-9a-f]{40}/superanimal_topviewmouse_hrnet_w32\\.pt; detector ${repo}[0-9a-f]{40}/`,
+      ),
+    );
   });
 
   it("guards unload, and asks before closing, while the project has edits", () => {

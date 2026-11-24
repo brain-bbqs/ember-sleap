@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  DEEPLABCUT_RUNS_ALONE,
   INLINE_LABELS_REFUSED,
   TRAIN_NEEDS_LABELS,
   type ArchiveRef,
@@ -49,6 +50,17 @@ const CARD: ModelCard = {
     { role: "config", folder: "", url: "https://hf.test/lab/mice/training_config.yaml" },
     { role: "checkpoint", folder: "", url: "https://hf.test/lab/mice/best.ckpt" },
   ],
+};
+const SUPERANIMAL: HostModelCard = {
+  id: "index:superanimal-topviewmouse-hrnet-w32",
+  name: "SuperAnimal-TopViewMouse, HRNet-w32 (d443257)",
+  framework: "deeplabcut",
+  heads: [],
+  files: [
+    { role: "checkpoint", folder: "", url: "https://hf.test/sa/superanimal_topviewmouse_hrnet_w32.pt" },
+    { role: "detector", folder: "", url: "https://hf.test/sa/superanimal_topviewmouse_fasterrcnn_resnet50_fpn_v2.pt" },
+  ],
+  deeplabcut: { superanimal: "superanimal_topviewmouse", model: "hrnet_w32", detector: "fasterrcnn_resnet50_fpn_v2" },
 };
 const TOP_DOWN: ModelCard = {
   id: "hf:lab/mice-topdown",
@@ -168,7 +180,7 @@ describe("buildJobRequest", () => {
     ).toEqual({
       spec,
       inputs: [{ url: VIDEO.url, fileType: "mp4", name: "session1.mp4" }],
-      models: [{ id: CARD.id, files: CARD.files }],
+      models: [{ id: CARD.id, framework: "sleap-nn", files: CARD.files }],
     });
   });
 
@@ -186,6 +198,37 @@ describe("buildJobRequest", () => {
       ],
       [CARD.id, [":config", ":checkpoint"]],
     ]);
+  });
+
+  it("sends a DeepLabCut model with the model zoo names DeepLabCut builds it from, and its two checkpoints", () => {
+    const cards = new Map([[SUPERANIMAL.id, SUPERANIMAL]]);
+    const request = buildJobRequest(
+      track({ model_paths: [SUPERANIMAL.id] }),
+      undefined,
+      known({ files: filesOf(VIDEO), cards }),
+    );
+    expect(request.models).toEqual([
+      { id: SUPERANIMAL.id, framework: "deeplabcut", deeplabcut: SUPERANIMAL.deeplabcut, files: SUPERANIMAL.files },
+    ]);
+  });
+
+  it.each([
+    ["beside a sleap-nn model", [SUPERANIMAL.id, CARD.id]],
+    ["beside another DeepLabCut model", [SUPERANIMAL.id, "index:superanimal-quadruped"]],
+  ])("refuses a DeepLabCut model %s, since it runs on its own", (_label, model_paths) => {
+    const quadruped = { ...SUPERANIMAL, id: "index:superanimal-quadruped" };
+    const cards = new Map([SUPERANIMAL, CARD, quadruped].map((card) => [card.id, card]));
+    expect(() => buildJobRequest(track({ model_paths }), undefined, known({ files: filesOf(VIDEO), cards }))).toThrow(
+      DEEPLABCUT_RUNS_ALONE,
+    );
+  });
+
+  it("refuses a DeepLabCut card that names no DeepLabCut model, which compute could not run", () => {
+    const unnamed: HostModelCard = { ...SUPERANIMAL, deeplabcut: undefined };
+    const cards = new Map([[unnamed.id, unnamed]]);
+    expect(() =>
+      buildJobRequest(track({ model_paths: [unnamed.id] }), undefined, known({ files: filesOf(VIDEO), cards })),
+    ).toThrow(`Model ${unnamed.id} runs on DeepLabCut but names no DeepLabCut model.`);
   });
 
   it("refuses a URL this page did not hand out, since its type is unknown", () => {
@@ -505,7 +548,7 @@ describe("createSleapHost", () => {
     expect(onModelWarning).toHaveBeenCalledWith("broken", new Error("down"));
     await host.submitJob(track(), project);
     expect(compute.submit).toHaveBeenCalledWith(
-      expect.objectContaining({ models: [{ id: CARD.id, files: CARD.files }] }),
+      expect.objectContaining({ models: [{ id: CARD.id, framework: "sleap-nn", files: CARD.files }] }),
     );
   });
 
@@ -517,7 +560,7 @@ describe("createSleapHost", () => {
     await host.submitJob(track(), project);
     expect(onModelWarning).toHaveBeenCalledTimes(1);
     expect(compute.submit).toHaveBeenCalledWith(
-      expect.objectContaining({ models: [{ id: CARD.id, files: CARD.files }] }),
+      expect.objectContaining({ models: [{ id: CARD.id, framework: "sleap-nn", files: CARD.files }] }),
     );
 
     await host.submitJob(track(), project);
@@ -542,7 +585,7 @@ describe("createSleapHost", () => {
     host.remember({ ...VIDEO, ref: project });
     await host.submitJob(track({ model_paths: [trained.id] }), project);
     expect(compute.submit).toHaveBeenCalledWith(
-      expect.objectContaining({ models: [{ id: trained.id, files: trained.files }] }),
+      expect.objectContaining({ models: [{ id: trained.id, framework: "sleap-nn", files: trained.files }] }),
     );
     expect((await host.listModels({})).map((card) => card.id)).toEqual(["index:m"]);
   });

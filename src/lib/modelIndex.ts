@@ -1,26 +1,29 @@
 import { isSafeRelativePath } from "./fileType";
 import {
   folderOf,
+  isModelFramework,
   isModelHead,
   modelFileRole,
   modelFilesProblem,
   parseSkeleton,
+  type DeepLabCutModel,
   type HostModelCard,
   type ModelLocation,
   type ModelSource,
 } from "./modelCatalogue";
-import type { ModelFile, ModelHead, ModelSkeleton } from "./sleapContract";
+import type { ModelFile, ModelFramework, ModelHead, ModelSkeleton } from "./sleapContract";
 
 // The central model index: a curated `models.json` in a designated EMBER dandiset, each entry
 // pointing at a model on Hugging Face or EMBER. Format: docs/MODEL_INDEX.md; a valid example is
 // docs/examples/models.json, and `npm run check-model-index` checks a file before it is published.
+// Until that dandiset exists, the page reads its own copy, src/models.json, from its bundle.
 
 export const MODEL_INDEX_SCHEMA = "ember-sleap.models/v1";
 
 /**
  * Where the index is served from. Null until the index dandiset exists: no SLEAP model catalogue
- * exists yet (brain-bbqs/bbqs_model_zoo is an empty stub), so this page creates one, and the
- * index source stays off until then.
+ * exists yet (brain-bbqs/bbqs_model_zoo is an empty stub), so this page creates one, and reads the
+ * copy in its own bundle until then (createBundledIndexSource).
  */
 export const MODEL_INDEX_URL: string | null = null;
 
@@ -28,6 +31,14 @@ const HF_HUB_URL = "https://huggingface.co";
 const DANDISET_ID = /^\d{6}$/;
 const HF_REPO = /^[\w.-]+\/[\w.-]+$/;
 const SHA256 = /^[0-9a-f]{64}$/;
+/** A DeepLabCut model zoo name, as "superanimal_topviewmouse", "hrnet_w32" or "fasterrcnn_resnet50_fpn_v2". */
+const DLC_NAME = /^[a-z0-9_]+$/;
+
+/** The file roles each framework's models are made of. */
+const FRAMEWORK_ROLES: Record<ModelFramework, readonly ModelFile["role"][]> = {
+  "sleap-nn": ["config", "checkpoint"],
+  deeplabcut: ["checkpoint", "detector"],
+};
 
 export interface ParsedModelIndex {
   models: HostModelCard[];
@@ -89,44 +100,101 @@ function fileUrl(source: ModelLocation, path: string): string {
  * One of an entry's files at the source, in the model folder its path's directory names, or why
  * not. `paths` holds the paths of the entry's files read so far.
  */
-function parseFile(file: unknown, source: ModelLocation, paths: Set<string>): ModelFile | string {
+function parseFile(
+  file: unknown,
+  source: ModelLocation,
+  paths: Set<string>,
+  framework: ModelFramework,
+): ModelFile | string {
   if (!isRecord(file)) return "every file must be an object";
   const { role, path, sha256 } = file;
-  if (role !== "config" && role !== "checkpoint") return 'file role must be "config" or "checkpoint"';
+  const roles = FRAMEWORK_ROLES[framework];
+  if (!roles.some((r) => r === role)) {
+    return `file role must be ${roles.map((r) => `"${r}"`).join(" or ")} in a ${framework} entry`;
+  }
+  const fileRole = role as ModelFile["role"];
   if (!nonEmpty(path) || !isModelPath(path)) return "file path must be a relative path";
   if (paths.has(path)) return `file "${path}" is listed twice`;
   paths.add(path);
   // The compute side saves each file under its role's name, so a known name must match its role.
   const named = modelFileRole(path.slice(path.lastIndexOf("/") + 1));
-  if (named && named !== role) return `file "${path}" is named as a ${named}, not a ${role}`;
+  if (named && named !== fileRole) return `file "${path}" is named as a ${named}, not a ${fileRole}`;
   if (sha256 !== undefined && (typeof sha256 !== "string" || !SHA256.test(sha256))) {
     return "file sha256 must be 64 lowercase hex digits";
   }
-  return { role, folder: folderOf(path), url: fileUrl(source, path), ...(sha256 ? { sha256 } : {}) };
+  return { role: fileRole, folder: folderOf(path), url: fileUrl(source, path), ...(sha256 ? { sha256 } : {}) };
 }
 
-/** The entry's files at the source, or why they cannot run as the entry's heads say. */
-function parseFiles(value: unknown, source: ModelLocation, heads: readonly ModelHead[]): ModelFile[] | string {
+/** The entry's files at the source, or why they cannot run as the entry's heads and framework say. */
+function parseFiles(
+  value: unknown,
+  source: ModelLocation,
+  heads: readonly ModelHead[],
+  framework: ModelFramework,
+): ModelFile[] | string {
   if (!Array.isArray(value) || value.length === 0) return "files must be a non-empty array";
   const files: ModelFile[] = [];
   const paths = new Set<string>();
   for (const entry of value) {
-    const file = parseFile(entry, source, paths);
+    const file = parseFile(entry, source, paths, framework);
     if (typeof file === "string") return file;
     files.push(file);
   }
-  return modelFilesProblem(heads, files) ?? files;
+  return modelFilesProblem(heads, files, framework) ?? files;
 }
 
-function parseEntry(entry: Record<string, unknown>): HostModelCard | string {
-  const { id, name, version, license, species, heads, skeleton } = entry;
-  if (!nonEmpty(name)) return "name must be a non-empty string";
-  if (!nonEmpty(version)) return "version must be a non-empty string";
-  if (!nonEmpty(license)) return "license must be a non-empty string";
-  if (species !== undefined && !nonEmpty(species)) return "species must be a non-empty string when given";
+/** A DeepLabCut entry's model zoo names, or why not. */
+function parseDeepLabCut(value: unknown): DeepLabCutModel | string {
+  const why =
+    'deeplabcut must be { superanimal, model, detector }, each a DeepLabCut model zoo name such as "superanimal_topviewmouse"';
+  if (!isRecord(value)) return why;
+  const { superanimal, model, detector } = value;
+  const names = [superanimal, model, detector];
+  if (!names.every((n): n is string => typeof n === "string" && DLC_NAME.test(n))) return why;
+  return { superanimal: superanimal as string, model: model as string, detector: detector as string };
+}
+
+/** The heads a sleap-nn entry declares, or a DeepLabCut entry's model names, or why not. */
+function parseRuntime(
+  entry: Record<string, unknown>,
+  framework: ModelFramework,
+): { heads: ModelHead[]; deeplabcut?: DeepLabCutModel } | string {
+  const { heads, deeplabcut } = entry;
+  if (framework === "deeplabcut") {
+    if (heads !== undefined) return "heads are sleap-nn's, so a DeepLabCut entry leaves them out";
+    const model = parseDeepLabCut(deeplabcut);
+    return typeof model === "string" ? model : { heads: [], deeplabcut: model };
+  }
+  if (deeplabcut !== undefined) return 'deeplabcut is only for an entry whose framework is "deeplabcut"';
   if (!Array.isArray(heads) || heads.length === 0 || !heads.every(isModelHead)) {
     return "heads must be a non-empty array of centroid, centered_instance, bottomup or single_instance";
   }
+  return { heads: [...heads] };
+}
+
+/** The fields that describe an entry to people. */
+interface Description {
+  name: string;
+  version: string;
+  license: string;
+  species?: string;
+}
+
+function parseDescription({ name, version, license, species }: Record<string, unknown>): Description | string {
+  if (!nonEmpty(name)) return "name must be a non-empty string";
+  if (!nonEmpty(version)) return "version must be a non-empty string";
+  if (!nonEmpty(license)) return "license must be a non-empty string";
+  if (species === undefined) return { name, version, license };
+  return nonEmpty(species) ? { name, version, license, species } : "species must be a non-empty string when given";
+}
+
+function parseEntry(entry: Record<string, unknown>): HostModelCard | string {
+  const description = parseDescription(entry);
+  if (typeof description === "string") return description;
+  const { id, skeleton, framework = "sleap-nn" } = entry;
+  if (!isModelFramework(framework)) return 'framework must be "sleap-nn" or "deeplabcut" when given';
+  const runtime = parseRuntime(entry, framework);
+  if (typeof runtime === "string") return runtime;
   let parsedSkeleton: ModelSkeleton | undefined;
   if (skeleton !== undefined) {
     parsedSkeleton = parseSkeleton(skeleton);
@@ -134,19 +202,22 @@ function parseEntry(entry: Record<string, unknown>): HostModelCard | string {
   }
   const source = parseSource(entry.source);
   if (typeof source === "string") return source;
-  const files = parseFiles(entry.files, source, heads);
+  const files = parseFiles(entry.files, source, runtime.heads, framework);
   if (typeof files === "string") return files;
 
   return {
     id: `index:${id as string}`,
     // The card has no version field, so the version rides in the name the picker shows.
-    name: `${name} (${version})`,
-    license,
-    ...(species !== undefined ? { species } : {}),
-    heads: [...heads],
+    name: `${description.name} (${description.version})`,
+    license: description.license,
+    ...(description.species !== undefined ? { species: description.species } : {}),
+    // sleap-nn, the default, is left unsaid, as every other source leaves it.
+    ...(framework === "sleap-nn" ? {} : { framework }),
+    heads: runtime.heads,
     ...(parsedSkeleton ? { skeleton: parsedSkeleton } : {}),
     files,
     source: { kind: "index", target: source },
+    ...(runtime.deeplabcut ? { deeplabcut: runtime.deeplabcut } : {}),
   };
 }
 
@@ -194,6 +265,25 @@ export function checkModelIndex(text: string): ParsedModelIndex {
   }
 }
 
+const warnLeftOut = (problems: string[]) => console.warn("Model index entries left out:", problems);
+
+/**
+ * An index this page carries in its bundle (src/models.json), read as a fetched one is: the models
+ * curated so far, SuperAnimal's first, until the index dandiset exists and MODEL_INDEX_URL names it.
+ */
+export function createBundledIndexSource(json: unknown, onProblems = warnLeftOut): ModelSource {
+  return {
+    name: "Model index",
+    // In a promise, so a document that is not an index fails the source as a failed fetch would.
+    list: () =>
+      new Promise<HostModelCard[]>((resolve) => {
+        const { models, problems } = parseModelIndex(json);
+        if (problems.length > 0) onProblems(problems);
+        resolve(models);
+      }),
+  };
+}
+
 export interface IndexSourceOptions {
   url: string;
   fetch?: typeof fetch;
@@ -204,7 +294,7 @@ export interface IndexSourceOptions {
 export function createIndexSource({
   url,
   fetch: fetchImpl = (input, init) => fetch(input, init),
-  onProblems = (problems) => console.warn("Model index entries left out:", problems),
+  onProblems = warnLeftOut,
 }: IndexSourceOptions): ModelSource {
   return {
     name: "Model index",

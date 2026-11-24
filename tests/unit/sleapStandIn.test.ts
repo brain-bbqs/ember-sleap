@@ -707,6 +707,25 @@ describe("mountStandIn", () => {
       expect(q(container, "models").textContent).toContain("MIT · from the model index (Hugging Face lab/mouse)");
     });
 
+    it("names DeepLabCut in place of the heads a DeepLabCut model does not have", async () => {
+      const listModels = () =>
+        Promise.resolve([
+          {
+            id: "index:superanimal",
+            name: "SuperAnimal-TopViewMouse",
+            framework: "deeplabcut" as const,
+            heads: [],
+            species: "Mus musculus",
+            files: [],
+          },
+        ]);
+      const app = mount({ host: { listModels } });
+      await app.open(FILE);
+      q(container, "list-models").click();
+      await vi.waitFor(() => expect(container.querySelectorAll('[data-role="predict"]').length).toBe(1));
+      expect(q(container, "models").textContent).toContain("SuperAnimal-TopViewMouse DeepLabCut · Mus musculus");
+    });
+
     it("predicts on the project open when Predict is pressed, not the one the list was made for", async () => {
       const { host } = computeHost();
       const app = mount({ host });

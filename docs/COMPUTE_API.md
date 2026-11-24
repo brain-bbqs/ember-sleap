@@ -104,6 +104,7 @@ An inference job:
   "models": [
     {
       "id": "hf:talmolab/mice-topdown",
+      "framework": "sleap-nn",
       "files": [
         {
           "role": "config",
@@ -134,12 +135,12 @@ An inference job:
 }
 ```
 
-| Field     | Meaning                                                                                                                                                            |
-| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `spec`    | SLEAP's job spec. `type` is `"train"` or `"track"`.                                                                                                                |
-| `inputs`  | Every URL the spec names, each with its `fileType` (`slp`, `pkg.slp`, `mp4`, `avi` or `h5`), a display `name` and its EMBER `archive` asset.                       |
-| `models`  | For a track job, each id in `model_paths` expanded to the files the worker must fetch: a `config` and a `checkpoint` per model `folder`, with `sha256` when known. |
-| `project` | The dandiset results are written back to, and the EMBER path of the project the job came from.                                                                     |
+| Field     | Meaning                                                                                                                                                                                             |
+| --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `spec`    | SLEAP's job spec. `type` is `"train"` or `"track"`.                                                                                                                                                 |
+| `inputs`  | Every URL the spec names, each with its `fileType` (`slp`, `pkg.slp`, `mp4`, `avi` or `h5`), a display `name` and its EMBER `archive` asset.                                                        |
+| `models`  | For a track job, each id in `model_paths` expanded to what the worker runs: its `framework` and its files (see [Inputs, models and results](#inputs-models-and-results)), with `sha256` when known. |
+| `project` | The dandiset results are written back to, and the EMBER path of the project the job came from.                                                                                                      |
 
 - **File types are declared, never guessed.** EMBER download links and S3 blob URLs have no file extension, and sleap-nn picks `.slp` versus video handling from the extension of `--data_path`.
   The proxy (or the container) must use `fileType`, for example by downloading to a local file named with the right extension before calling sleap-nn.
@@ -189,10 +190,43 @@ Each event has the same shape sleap-app's job viewer already consumes from SLEAP
 
 ## Inputs, models and results
 
-- **Models load from local disk, one folder per head.** sleap-nn's `resolve_model_dir` accepts only a local model folder (or the `best.ckpt` / `training_config.yaml` in it), and a model folder holds one head.
+- **sleap-nn models load from local disk, one folder per head.** sleap-nn's `resolve_model_dir` accepts only a local model folder (or the `best.ckpt` / `training_config.yaml` in it), and a model folder holds one head.
   A single-head model is one folder; a top-down model is two, its centroid and centered-instance folders, and inference needs both.
   Every file of `models[].files` names its folder (`folder`, a path below where the model is kept: `""` for one kept at the top, e.g. `"centroid"` and `"centered_instance"` for a top-down one), each folder has exactly one `config` and one `checkpoint`, and only a top-down model has two folders.
   The proxy or container downloads each folder into a local directory of its own, saving the config as `training_config.yaml` and the checkpoint as `best.ckpt` (an EMBER download URL carries no file name), checks `sha256` when given, and passes every folder of every model in `model_paths` to `sleap-nn track`, one `--model_paths` each.
+- **DeepLabCut models run on their own.** A model whose `framework` is `"deeplabcut"` is one of DeepLabCut's pretrained SuperAnimal models, for inference only, and a job naming one names nothing else (the page refuses any other mix).
+  It carries `deeplabcut`, DeepLabCut's model zoo names for it, and two files: the pose model (`role: "checkpoint"`) and its detector (`role: "detector"`):
+
+  ```json
+  {
+    "id": "index:superanimal-topviewmouse-hrnet-w32",
+    "framework": "deeplabcut",
+    "deeplabcut": {
+      "superanimal": "superanimal_topviewmouse",
+      "model": "hrnet_w32",
+      "detector": "fasterrcnn_resnet50_fpn_v2"
+    },
+    "files": [
+      {
+        "role": "checkpoint",
+        "folder": "",
+        "url": "https://huggingface.co/mwmathis/DeepLabCutModelZoo-SuperAnimal-TopViewMouse/resolve/d443257…/superanimal_topviewmouse_hrnet_w32.pt",
+        "sha256": "5e7ed2b4…"
+      },
+      {
+        "role": "detector",
+        "folder": "",
+        "url": "https://huggingface.co/mwmathis/DeepLabCutModelZoo-SuperAnimal-TopViewMouse/resolve/d443257…/superanimal_topviewmouse_fasterrcnn_resnet50_fpn_v2.pt",
+        "sha256": "1175e31a…"
+      }
+    ]
+  }
+  ```
+
+  The container downloads both checkpoints and checks their `sha256`, saves the video under its declared `fileType`, and runs DeepLabCut 3's (PyTorch) `deeplabcut.video_inference_superanimal([video], superanimal_name=…, model_name=…, detector_name=…, customized_pose_checkpoint=<checkpoint>, customized_detector_checkpoint=<detector>, dest_folder=…, create_labeled_video=False)`, with the three names from `deeplabcut`.
+  It then converts DeepLabCut's predictions to `.slp` with sleap-io (`sio.load_dlc` reads DeepLabCut's CSV, so the `.h5` DeepLabCut writes is saved as CSV with pandas first) and writes it where any track job's predictions go, so the page lists and opens it the same way.
+  The `sleap-nn` models' `framework` is stated too, so the proxy never has to infer it.
+
 - **Model file URLs** are one of:
   - `https://huggingface.co/<repo>/resolve/<revision>/<file>`: public repos need no token; **gated repos need a Hugging Face token held on the proxy side**, never sent from the browser.
   - `https://api-dandi.emberarchive.org/api/assets/{asset_id}/download/`: an EMBER asset the service account downloads with its own EMBER credentials.
@@ -217,3 +251,5 @@ The SLEAP equivalent needs a Pennsieve app: [`aplbrain/sleap-docker-container`](
 - [ ] **Results:** does the service account write the `derivatives/sleap/` files, or does the proxy hand result links back for the page to save as the user?
 - [ ] **Embargoed data:** does the service account have read access to embargoed dandisets, and on whose authority?
 - [ ] **The SLEAP app on Pennsieve:** who writes `app.yml` for `aplbrain/sleap-docker-container`, and which sleap-nn version does it pin?
+- [ ] **DeepLabCut on Pennsieve:** can the DeepLabCut app behind dandiset 000598's runs serve SuperAnimal inference, and which DeepLabCut version does it pin (3.0 or later, for the PyTorch engine and `customized_*_checkpoint`)?
+- [ ] **SuperAnimal's license:** its weights are for academic, non-commercial use only; does running them on Pennsieve for EMBER's users fit that?
