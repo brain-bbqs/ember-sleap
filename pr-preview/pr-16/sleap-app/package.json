@@ -1,0 +1,13 @@
+{
+  "name": "@talmolab/sleap-app",
+  "version": "0.1.2-embed.bc7ff6b",
+  "description": "The SLEAP web app as a component a host page mounts (mountSleapApp), built from brain-bbqs/sleap-app@bc7ff6b (embed/integration). A test-run build for brain-bbqs/ember-sleap; not a Talmo Lab release.",
+  "type": "module",
+  "license": "BSD-3-Clause",
+  "exports": {
+    ".": "./sleap-app.js",
+    "./sleap-app.css": "./sleap-app.css",
+    "./package.json": "./package.json"
+  },
+  "sleapAppSource": "https://github.com/brain-bbqs/sleap-app/commit/bc7ff6b0988a2c969a227466e804c5e876e54827"
+}
