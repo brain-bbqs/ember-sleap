@@ -97,6 +97,19 @@
         <button type="button" id="close-project-btn" class="ember-bar-button" hidden>Close project</button>
       </div>
 
+      <div id="predictions" class="predictions" hidden>
+        <h3 id="predictions-title">Predictions</h3>
+        <p class="hint">
+          What inference wrote to the dandiset. Open a file to proofread it: saving keeps your corrections as labels
+          beside it.
+        </p>
+        <ul id="predictions-list" class="predictions-list" aria-labelledby="predictions-title"></ul>
+        <p id="predictions-status" class="hint predictions-status" role="status"></p>
+        <button type="button" id="predictions-retry" class="small" aria-describedby="predictions-status" hidden>
+          Try again
+        </button>
+      </div>
+
       <!-- The SLEAP app mounts here (src/ui/sleapComponent.ts decides what that is) and fills the window. -->
       <div id="sleap-root" class="sleap-root"></div>
 

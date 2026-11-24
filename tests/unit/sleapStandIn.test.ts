@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { newProjectFile } from "../../src/lib/newProjectFile";
 import type {
   HostRef,
+  JobEvent,
   MountOptions,
   NewProjectRequest,
   ResolvedFile,
@@ -278,7 +279,8 @@ describe("mountStandIn", () => {
       const refreshUrl = vi.fn<NonNullable<SleapHost["refreshUrl"]>>((file) =>
         Promise.resolve({ ...file, url: FRESH_URL }),
       );
-      const app = mount({ host: { save, refreshUrl } });
+      const submitJob = vi.fn<NonNullable<SleapHost["submitJob"]>>(() => Promise.resolve({ jobId: "job-1" }));
+      const app = mount({ host: { save, refreshUrl, submitJob } });
       await app.open({ ...FILE, ref: REF });
       serve({ [FILE.url]: expired, [FRESH_URL]: () => bytesResponse([1, 2, 3], 200) });
       q(container, "edit").click();
@@ -292,7 +294,9 @@ describe("mountStandIn", () => {
       q(container, "save").click();
       await vi.waitFor(() => expect(save).toHaveBeenCalledTimes(2));
       expect(refreshUrl).toHaveBeenCalledTimes(1);
-      expect(fetchMock).toHaveBeenLastCalledWith(FRESH_URL);
+      q(container, "train").click();
+      await vi.waitFor(() => expect(submitJob).toHaveBeenCalled());
+      expect(submitJob).toHaveBeenCalledWith(expect.objectContaining({ labels_path: FRESH_URL }), SAVED);
     });
 
     it("runs a second press after the first, with the ref and the link the first one left", async () => {
@@ -381,7 +385,8 @@ describe("mountStandIn", () => {
     it("saves what it read under the earlier project's name and ref, and keeps its fresh link to itself", async () => {
       const refreshed = deferred<ResolvedFile>();
       const save = vi.fn<NonNullable<SleapHost["save"]>>(() => Promise.resolve(SAVED));
-      const app = mount({ host: { save, refreshUrl: () => refreshed.promise } });
+      const submitJob = vi.fn<NonNullable<SleapHost["submitJob"]>>(() => Promise.resolve({ jobId: "job-1" }));
+      const app = mount({ host: { save, refreshUrl: () => refreshed.promise, submitJob } });
       await app.open({ ...FILE, ref: REF });
       serve({
         [FILE.url]: expired,
@@ -395,10 +400,9 @@ describe("mountStandIn", () => {
       await vi.waitFor(() => expect(save).toHaveBeenCalledTimes(1));
       expect(save).toHaveBeenCalledWith(expect.objectContaining({ size: 12 }), "labels.slp", REF);
 
-      // The project open now still reads from its own link, not the earlier project's fresh one.
-      q(container, "save").click();
-      await vi.waitFor(() => expect(save).toHaveBeenCalledTimes(2));
-      expect(save).toHaveBeenLastCalledWith(expect.objectContaining({ size: 2 }), "other.slp", OTHER_REF);
+      q(container, "train").click();
+      await vi.waitFor(() => expect(submitJob).toHaveBeenCalled());
+      expect(submitJob).toHaveBeenCalledWith(expect.objectContaining({ labels_path: OTHER.url }), OTHER_REF);
     });
 
     it.each([
@@ -444,6 +448,297 @@ describe("mountStandIn", () => {
       await app.open(FILE);
       q(container, "video-find").click();
       expect(q(container, "video-result").textContent).toBe("This page does not look videos up.");
+    });
+  });
+
+  describe("compute", () => {
+    const backends = () => [...q<HTMLSelectElement>(container, "backend").options].map((o) => o.value);
+
+    it.each([
+      [{ builtIn: true }, { submitJob: vi.fn() }, ["local", "connect", "host"]],
+      [undefined, {}, ["local", "connect"]],
+      [{ builtIn: false }, { submitJob: vi.fn() }, ["host"]],
+    ])("offers backends for compute %j and host %j: %j", (compute, host, expected) => {
+      mount({ compute, host });
+      expect(backends()).toEqual(expected);
+    });
+
+    function computeHost(overrides: Partial<SleapHost> = {}) {
+      let emit: (event: JobEvent) => void = () => {};
+      const unsubscribe = vi.fn();
+      const host = {
+        submitJob: vi.fn<NonNullable<SleapHost["submitJob"]>>(() => Promise.resolve({ jobId: "job-1" })),
+        subscribeJob: vi.fn((_id: string, onEvent: (event: JobEvent) => void) => {
+          emit = onEvent;
+          return unsubscribe;
+        }),
+        cancelJob: vi.fn(() => Promise.resolve()),
+        listModels: vi.fn<NonNullable<SleapHost["listModels"]>>(() =>
+          Promise.resolve([
+            { id: "hf:lab/mouse", name: "Mouse", heads: ["single_instance"], species: "mouse", files: [] },
+          ]),
+        ),
+        ...overrides,
+      };
+      return { host, emit: (e: JobEvent) => emit(e), unsubscribe };
+    }
+
+    it("does nothing on Train or Find models before a project is open", () => {
+      const { host } = computeHost();
+      mount({ compute: { builtIn: false }, host });
+      q(container, "train").click();
+      q(container, "list-models").click();
+      expect(host.submitJob).not.toHaveBeenCalled();
+      expect(host.listModels).not.toHaveBeenCalled();
+    });
+
+    it("runs jobs only through the host's backend", async () => {
+      const { host } = computeHost();
+      const app = mount({ host });
+      await app.open(FILE);
+      q<HTMLSelectElement>(container, "backend").value = "local";
+      q(container, "train").click();
+      expect(q(container, "compute-status").textContent).toBe(
+        "The stand-in runs jobs only through the page's own compute.",
+      );
+      expect(host.submitJob).not.toHaveBeenCalled();
+    });
+
+    it("submits a training job on the open project and follows its events", async () => {
+      const { host, emit, unsubscribe } = computeHost();
+      const app = mount({ compute: { builtIn: false }, host });
+      await app.open({ ...FILE, ref: REF });
+      q(container, "train").click();
+      await vi.waitFor(() => expect(q(container, "job").hidden).toBe(false));
+      expect(host.submitJob).toHaveBeenCalledWith(
+        expect.objectContaining({ type: "train", labels_path: FILE.url, model_types: ["single_instance"] }),
+        REF,
+      );
+      expect(q(container, "job-id").textContent).toBe("Job job-1");
+
+      const events: JobEvent[] = [
+        { topic: "job.status", seq: 1, data: { state: "running" } },
+        { topic: "job.log", seq: 2, data: { line: "Loading labels" } },
+        { topic: "job.log", seq: 3, data: { line: 42 } },
+        { topic: "job.epoch", seq: 4, data: { epoch: 0, train_loss: 0.5, val_loss: { odd: true } } },
+        { topic: "job.metric", seq: 5, data: { epoch: 0 } },
+        { topic: "job.result", seq: 6, data: { model_id: "m1" } },
+        { topic: "job.status", seq: 7, data: { state: "completed" } },
+      ];
+      events.forEach(emit);
+      expect(q(container, "job-log").textContent).toBe(
+        'Loading labels\n\nepoch 0: train loss 0.5, val loss {"odd":true}\nresult: {"model_id":"m1"}\n',
+      );
+      expect(q(container, "job-state").textContent).toBe("completed");
+      expect(q(container, "job-state").classList.contains("ok")).toBe(true);
+      expect(q(container, "job-cancel").hidden).toBe(true);
+
+      app.unmount();
+      handle = null;
+      expect(unsubscribe).toHaveBeenCalled();
+    });
+
+    it("trains on unsaved edits by sending them inline, as the bytes a save would send", async () => {
+      const { host } = computeHost();
+      const app = mount({ compute: { builtIn: false }, host });
+      await app.open({ ...FILE, ref: REF });
+      q(container, "edit").click();
+      q(container, "train").click();
+      await vi.waitFor(() => expect(host.submitJob).toHaveBeenCalled());
+      const [spec, ref] = host.submitJob.mock.calls[0];
+      expect(spec).toEqual({
+        type: "train",
+        config_contents: [expect.stringContaining("single_instance")],
+        model_types: ["single_instance"],
+        labels_content: btoa(String.fromCharCode(...HDF5)),
+        max_epochs: 3,
+        run_name: "stand-in",
+      });
+      expect(ref).toBe(REF);
+      expect(app.isDirty()).toBe(true);
+    });
+
+    it("renews an expired link once to read the edits it trains on, and keeps the fresh one", async () => {
+      const { host } = computeHost();
+      const refreshUrl = vi.fn<NonNullable<SleapHost["refreshUrl"]>>((file) =>
+        Promise.resolve({ ...file, url: FRESH_URL }),
+      );
+      const app = mount({ host: { ...host, refreshUrl } });
+      await app.open({ ...FILE, ref: REF });
+      serve({ [FILE.url]: expired, [FRESH_URL]: () => bytesResponse([1, 2, 3], 200) });
+      q(container, "edit").click();
+      q(container, "train").click();
+      await vi.waitFor(() => expect(host.submitJob).toHaveBeenCalledTimes(1));
+      expect(host.submitJob.mock.calls[0][0]).toMatchObject({ labels_content: btoa("\x01\x02\x03") });
+
+      q(container, "list-models").click();
+      await vi.waitFor(() => expect(container.querySelectorAll('[data-role="predict"]').length).toBe(1));
+      q(container, "predict").click();
+      await vi.waitFor(() => expect(host.submitJob).toHaveBeenCalledTimes(2));
+      expect(host.submitJob.mock.calls[1][0]).toMatchObject({ data_path: FRESH_URL });
+      expect(refreshUrl).toHaveBeenCalledTimes(1);
+    });
+
+    it("says why it cannot train on edits it cannot read, and submits nothing", async () => {
+      const { host } = computeHost();
+      const app = mount({ host });
+      await app.open({ ...FILE, ref: REF });
+      serve({ [FILE.url]: () => new Response("<Error/>", { status: 500 }) });
+      q(container, "edit").click();
+      q(container, "train").click();
+      await vi.waitFor(() =>
+        expect(q(container, "compute-status").textContent).toBe(
+          "Could not submit: Could not read the project (HTTP 500).",
+        ),
+      );
+      expect(host.submitJob).not.toHaveBeenCalled();
+    });
+
+    it("says to save first when its edits are too large to send inline, and submits nothing", async () => {
+      const { host } = computeHost();
+      const app = mount({ host });
+      await app.open({ ...FILE, ref: REF });
+      // What Chromium's btoa gives once the base64 would be longer than its longest string.
+      vi.stubGlobal("btoa", () => "");
+      q(container, "edit").click();
+      q(container, "train").click();
+      await vi.waitFor(() =>
+        expect(q(container, "compute-status").textContent).toBe(
+          "Could not submit: These labels are too large to send inline (12 B): save the project, then train.",
+        ),
+      );
+      expect(host.submitJob).not.toHaveBeenCalled();
+    });
+
+    it("trains on the saved project by its link once its edits are saved", async () => {
+      const { host } = computeHost();
+      const save = vi.fn<NonNullable<SleapHost["save"]>>(() => Promise.resolve(SAVED));
+      const app = mount({ host: { ...host, save } });
+      await app.open({ ...FILE, ref: REF });
+      q(container, "edit").click();
+      q(container, "save").click();
+      await vi.waitFor(() => expect(app.isDirty()).toBe(false));
+      q(container, "train").click();
+      await vi.waitFor(() => expect(host.submitJob).toHaveBeenCalled());
+      expect(host.submitJob.mock.calls[0][0]).toMatchObject({ labels_path: FILE.url });
+      expect(host.submitJob.mock.calls[0][0]).not.toHaveProperty("labels_content");
+      expect(host.submitJob.mock.calls[0][1]).toBe(SAVED);
+    });
+
+    it("shows a failure's detail, and a canceled job's, with Cancel gone", async () => {
+      const { host, emit } = computeHost();
+      const app = mount({ host });
+      await app.open(FILE);
+      q(container, "train").click();
+      await vi.waitFor(() => expect(q(container, "job").hidden).toBe(false));
+      emit({ topic: "job.status", seq: 1, data: { state: "failed", detail: "out of memory" } });
+      expect(q(container, "job-state").classList.contains("err")).toBe(true);
+      expect(q(container, "job-log").textContent).toBe("failed: out of memory\n");
+      emit({ topic: "job.status", seq: 2, data: { state: "canceled", detail: undefined } });
+      expect(q(container, "job-cancel").hidden).toBe(true);
+    });
+
+    it("cancels the followed job through the host", async () => {
+      const { host, emit } = computeHost();
+      const app = mount({ host });
+      await app.open(FILE);
+      q(container, "job-cancel").click();
+      expect(host.cancelJob).not.toHaveBeenCalled();
+      q(container, "train").click();
+      await vi.waitFor(() => expect(q(container, "job").hidden).toBe(false));
+      emit({ topic: "job.status", seq: 1, data: { state: "running" } });
+      expect(q(container, "job-cancel").hidden).toBe(false);
+      q(container, "job-cancel").click();
+      expect(host.cancelJob).toHaveBeenCalledWith("job-1");
+    });
+
+    it("follows a submitted job even when the host cannot stream it", async () => {
+      const { host } = computeHost({ subscribeJob: undefined });
+      const app = mount({ host });
+      await app.open(FILE);
+      q(container, "train").click();
+      await vi.waitFor(() => expect(q(container, "job-state").textContent).toBe("submitted"));
+    });
+
+    it("says why a submission failed", async () => {
+      const { host } = computeHost({ submitJob: () => Promise.reject(new Error("proxy down")) });
+      const app = mount({ host });
+      await app.open(FILE);
+      q(container, "train").click();
+      await vi.waitFor(() => expect(q(container, "compute-status").textContent).toBe("Could not submit: proxy down"));
+      const { host: other } = computeHost({ submitJob: () => Promise.reject("refused") });
+      handle?.unmount();
+      const second = mount({ host: other });
+      await second.open(FILE);
+      q(container, "train").click();
+      await vi.waitFor(() => expect(q(container, "compute-status").textContent).toBe("Could not submit: refused"));
+    });
+
+    it("lists models and predicts with the chosen one on the open file", async () => {
+      const { host } = computeHost();
+      const app = mount({ host });
+      await app.open({ ...FILE, ref: REF });
+      q(container, "list-models").click();
+      await vi.waitFor(() => expect(container.querySelectorAll('[data-role="predict"]').length).toBe(1));
+      expect(q(container, "models").textContent).toContain("Mouse");
+      expect(q(container, "models").textContent).toContain("single_instance · mouse");
+      expect(host.listModels).toHaveBeenCalledWith({});
+
+      q(container, "predict").click();
+      await vi.waitFor(() => expect(host.submitJob).toHaveBeenCalled());
+      expect(host.submitJob).toHaveBeenCalledWith(
+        { type: "track", data_path: FILE.url, model_paths: ["hf:lab/mouse"] },
+        REF,
+      );
+
+      q<HTMLSelectElement>(container, "backend").value = "local";
+      q(container, "predict").click();
+      expect(host.submitJob).toHaveBeenCalledTimes(1);
+    });
+
+    it("says where each listed model comes from, in the host's words", async () => {
+      const sourceLabel = "from Hugging Face lab/mouse";
+      const listModels = () =>
+        Promise.resolve([{ id: "index:mouse", name: "Mouse (1)", heads: [], license: "MIT", files: [], sourceLabel }]);
+      const app = mount({ host: { listModels } });
+      await app.open(FILE);
+      q(container, "list-models").click();
+      await vi.waitFor(() => expect(container.querySelectorAll('[data-role="predict"]').length).toBe(1));
+      expect(q(container, "models").textContent).toContain("MIT · from Hugging Face lab/mouse");
+    });
+
+    it("predicts on the project open when Predict is pressed, not the one the list was made for", async () => {
+      const { host } = computeHost();
+      const app = mount({ host });
+      await app.open({ ...FILE, ref: REF });
+      q(container, "list-models").click();
+      await vi.waitFor(() => expect(container.querySelectorAll('[data-role="predict"]').length).toBe(1));
+
+      await app.open(OTHER);
+      q(container, "predict").click();
+      await vi.waitFor(() => expect(host.submitJob).toHaveBeenCalled());
+      expect(host.submitJob).toHaveBeenCalledWith(
+        { type: "track", data_path: OTHER.url, model_paths: ["hf:lab/mouse"] },
+        OTHER_REF,
+      );
+    });
+
+    it.each([
+      [() => Promise.resolve([]), "No models found."],
+      [() => Promise.reject(new Error("hub down")), "Could not list models: hub down"],
+      [() => Promise.reject("nope"), "Could not list models: nope"],
+    ])("reports an empty or failed listing (%#)", async (listModels, expected) => {
+      const app = mount({ host: { listModels } });
+      await app.open(FILE);
+      q(container, "list-models").click();
+      await vi.waitFor(() => expect(q(container, "compute-status").textContent).toBe(expected));
+    });
+
+    it("does not list models when the host has no catalogue", async () => {
+      const app = mount({ host: {} });
+      await app.open(FILE);
+      q(container, "list-models").click();
+      expect(q(container, "compute-status").textContent).toBe("");
     });
   });
 
@@ -496,9 +791,11 @@ describe("the stand-in laid out as the SLEAP web app", () => {
     q(container, "menu-file").click();
     expect(list("menu-file").hidden).toBe(false);
     expect(q(container, "menu-file").getAttribute("aria-expanded")).toBe("true");
-    q(container, "menu-file").click();
+    q(container, "menu-predict").click();
     expect(list("menu-file").hidden).toBe(true);
-    expect(q(container, "menu-file").getAttribute("aria-expanded")).toBe("false");
+    expect(list("menu-predict").hidden).toBe(false);
+    q(container, "menu-predict").click();
+    expect(list("menu-predict").hidden).toBe(true);
 
     q(container, "menu-file").click();
     document.body.dispatchEvent(new Event("pointerdown", { bubbles: true }));
@@ -527,12 +824,12 @@ describe("the stand-in laid out as the SLEAP web app", () => {
   });
 
   it("focuses a panel's first control from the icon rail", async () => {
-    const app = mount();
+    const app = mount({ host: { submitJob: vi.fn() } });
     await app.open(FILE);
     const rail = [...container.querySelectorAll<HTMLButtonElement>(".sl-rail-button")];
-    expect(rail.map((b) => b.title)).toEqual(["Videos"]);
-    rail[0].click();
-    expect(document.activeElement).toBe(q(container, "video-path"));
+    expect(rail.map((b) => b.title)).toEqual(["Videos", "Train and predict"]);
+    rail[1].click();
+    expect(document.activeElement).toBe(q(container, "backend"));
   });
 
   describe("a new project", () => {
@@ -576,14 +873,54 @@ describe("the stand-in laid out as the SLEAP web app", () => {
       expect(save.mock.calls[1][2]).toBe(SAVED);
     });
 
-    it("shows no video when it has no videos", async () => {
-      const app = mount();
+    it("trains on its file sent inline, since it has no link of its own", async () => {
+      const submitJob = vi.fn<NonNullable<SleapHost["submitJob"]>>(() => Promise.resolve({ jobId: "job-1" }));
+      const app = mount({ compute: { builtIn: false }, host: { submitJob } });
+      await app.create(STARTED);
+      q(container, "menu-predict").click();
+      q(container, "menu-train").click();
+      await vi.waitFor(() => expect(submitJob).toHaveBeenCalled());
+      const [spec, ref] = submitJob.mock.calls[0];
+      expect(spec).toMatchObject({ type: "train", labels_content: expect.any(String) });
+      expect(spec).not.toHaveProperty("labels_path");
+      expect(atob((spec as { labels_content: string }).labels_content)).toBe(
+        JSON.stringify(["sub-01/beh/top.mp4", "sub-01/beh/side.mp4"]),
+      );
+      expect(ref).toBe(STARTED_REF);
+    });
+
+    it("predicts on the video it shows", async () => {
+      const submitJob = vi.fn<NonNullable<SleapHost["submitJob"]>>(() => Promise.resolve({ jobId: "job-1" }));
+      const listModels = () => Promise.resolve([{ id: "hf:lab/mouse", name: "Mouse", heads: [], files: [] }]);
+      const app = mount({ compute: { builtIn: false }, host: { submitJob, listModels } });
+      await app.create(STARTED);
+      q(container, "video-list").querySelectorAll("button")[1].click();
+      q(container, "menu-predict").click();
+      q(container, "menu-models").click();
+      await vi.waitFor(() => expect(container.querySelectorAll('[data-role="predict"]').length).toBe(1));
+      q(container, "predict").click();
+      await vi.waitFor(() => expect(submitJob).toHaveBeenCalled());
+      expect(submitJob).toHaveBeenCalledWith(
+        { type: "track", data_path: STARTED.videos[1].url, model_paths: ["hf:lab/mouse"] },
+        STARTED_REF,
+      );
+    });
+
+    it("shows no video and predicts on nothing when it has no videos", async () => {
+      const submitJob = vi.fn<NonNullable<SleapHost["submitJob"]>>(() => Promise.resolve({ jobId: "job-1" }));
+      const listModels = () => Promise.resolve([{ id: "hf:lab/mouse", name: "Mouse", heads: [], files: [] }]);
+      const app = mount({ compute: { builtIn: false }, host: { submitJob, listModels } });
       await app.create({ ...STARTED, videos: [] });
       expect(q(container, "video-player").hidden).toBe(true);
       expect(q(container, "video-list").hidden).toBe(true);
       expect(q(container, "file-probe").textContent).toBe(
         "New project on 0 videos. It is not saved yet: Save writes it.",
       );
+      q(container, "list-models").click();
+      await vi.waitFor(() => expect(container.querySelectorAll('[data-role="predict"]').length).toBe(1));
+      q(container, "predict").click();
+      await flush();
+      expect(submitJob).not.toHaveBeenCalled();
     });
 
     it("gives way to a project opened after it", async () => {

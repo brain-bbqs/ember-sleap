@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.0
+
+#### 🚀 Enhancement
+
+- Models from Hugging Face and EMBER, training and inference on simulated compute, and predictions listed below the app to proofread ([#10](https://github.com/brain-bbqs/ember-sleap/pull/10))
+
 ## 0.2.0
 
 #### 🚀 Enhancement

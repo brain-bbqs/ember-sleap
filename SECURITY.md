@@ -48,13 +48,26 @@ A service that needs to look something up does so with its own key, server-side.
 An earlier version of a sibling app forwarded the signed-in user's live access token to a helper host on every page load, which put a credential capable of acting as that user on a machine the repository doesn't control; a unit test now pins the absence of the `Authorization` header on that call.
 Do the same here: if such a service ever needs to know something it can't resolve with its own credentials, change the service, not the header.
 
+### The compute proxy exception
+
+There is one named exception: the central Pennsieve compute proxy, at the base URL set as `COMPUTE_PROXY_URL` in `src/lib/computeClient.ts`, receives the signed-in user's EMBER access token.
+
+- **Where:** only that host, and only on the job API in [docs/COMPUTE_API.md](docs/COMPUTE_API.md#endpoints): `POST /jobs`, `GET /jobs/{id}/events` and `POST /jobs/{id}/cancel`.
+  No other companion service gets it; Hugging Face is read with no credentials.
+- **Why:** single sign-on for jobs.
+  The proxy runs them under its own service account, so it needs to know which EMBER user asked and that they may read the inputs and write the destination dandiset, and EMBER's token is the only identity the page has.
+- **What the proxy may do with it:** identify the user and check their permissions on EMBER, then record them as the job's requester.
+  It must not store the token, log it, pass it on, or read or write EMBER with it: the service account does all of that.
+- **Dormant until configured:** while `COMPUTE_PROXY_URL` is `null` (as it is until the proxy's API exists), jobs run on the in-browser stub and the token goes nowhere but EMBER.
+- **Revisit** when the proxy's auth question in COMPUTE_API.md is settled: a proxy-scoped credential (a token exchange, or a token whose audience is the proxy) replaces this exception if EMBER can issue one.
+
 ## Sign-in and the token lifecycle
 
 - **Grant:** OAuth 2 authorization code with PKCE, through `@brain-bbqs/ember-client`, as a public client with no secret, requesting EMBER's default scope.
   ember-sleap is its own OAuth application on EMBER (`OAUTH_CLIENT_ID` in `src/lib/oauth.ts`), separate from its sibling apps' so each can be revoked on its own.
 - **Storage:** the PKCE verifier and state wait in `sessionStorage` across the redirect; the access and refresh tokens persist in `localStorage` under `ember-sleap.settings.v1`, an accepted trade-off by the checklist above.
 - **Lifetime and refresh:** access tokens live as long as EMBER's OAuth server sets.
-  Within 60 seconds of expiry, the next call to EMBER first refreshes them with the `refresh_token` grant.
+  Within 60 seconds of expiry, the next call to EMBER (or to the compute proxy) first refreshes them with the `refresh_token` grant.
   One refresh runs at a time however many calls are waiting on it, since EMBER rotates refresh tokens, and a tab follows another tab's refresh or sign-out instead of writing its own tokens back over it.
 - **Sign-out:** a best-effort revocation of the access token at EMBER's `/oauth/revoke_token/`, and the stored tokens are cleared.
 

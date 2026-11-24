@@ -1,9 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { fromHostRef } from "../../src/lib/hostRef";
+import { filesByFolder, modelFilesProblem } from "../../src/lib/modelCatalogue";
 import {
   MOCK_DANDISET_ID,
+  MOCK_MODELS,
+  MOCK_PREDICTIONS_PATH,
   MOCK_PROJECT_PATH,
   MOCK_VIDEO_PATHS,
+  mockModelSource,
   mockNewProjectRequest,
   mockProjectRequest,
   mockProjectUrl,
@@ -11,11 +15,20 @@ import {
 } from "../../src/lib/testInjection";
 
 describe("readTestInjection", () => {
-  it.each(["", "?mock_project", "?mock_new_project", "?foo=1&bar"])("is null without ?test (%j)", (search) => {
-    expect(readTestInjection(search)).toBe(null);
-  });
+  it.each(["", "?mock_project", "?mock_predictions", "?mock_predictions_missing", "?foo=1&bar"])(
+    "is null without ?test (%j)",
+    (search) => {
+      expect(readTestInjection(search)).toBe(null);
+    },
+  );
 
-  const none = { mockProject: false, mockNewProject: false, standIn: false };
+  const none = {
+    mockProject: false,
+    mockPredictions: false,
+    mockPredictionsMissing: false,
+    mockNewProject: false,
+    standIn: false,
+  };
 
   it("is a no-op plan for a bare ?test", () => {
     expect(readTestInjection("?test")).toEqual(none);
@@ -24,6 +37,12 @@ describe("readTestInjection", () => {
   it.each([
     ["?test&mock_project", { ...none, mockProject: true, standIn: true }],
     ["?mock_project&test", { ...none, mockProject: true, standIn: true }],
+    ["?test&mock_project&mock_predictions", { ...none, mockProject: true, mockPredictions: true, standIn: true }],
+    ["?test&mock_predictions", { ...none, mockPredictions: true }],
+    [
+      "?test&mock_project&mock_predictions&mock_predictions_missing",
+      { ...none, mockProject: true, mockPredictions: true, mockPredictionsMissing: true, standIn: true },
+    ],
     ["?test&mock_new_project", { ...none, mockNewProject: true, standIn: true }],
     ["?test&stand_in", { ...none, standIn: true }],
   ])("reads the flags in %s", (search, plan) => {
@@ -45,6 +64,14 @@ describe("mockNewProjectRequest", () => {
   });
 });
 
+describe("MOCK_PREDICTIONS_PATH", () => {
+  it("is where inference on the mock project writes, beside its labels file", () => {
+    expect(MOCK_PREDICTIONS_PATH).toBe(
+      "derivatives/sleap/sub-mock/beh/sub-mock_desc-predictionsTestInjectionMockProject_pose.slp",
+    );
+  });
+});
+
 describe("mockProjectRequest", () => {
   it("is a recognizably fake project at a location the archive could never issue", () => {
     const request = mockProjectRequest();
@@ -63,5 +90,22 @@ describe("mockProjectRequest", () => {
     expect(bytes.subarray(8).every((b) => b === 0)).toBe(true);
     expect(mockProjectRequest().url).toBe(request.url);
     expect(mockProjectUrl()).toBe(request.url);
+  });
+});
+
+describe("mockModelSource", () => {
+  it("lists the fixed models, as a copy", async () => {
+    const listed = await mockModelSource.list({});
+    expect(listed).toEqual([...MOCK_MODELS]);
+    expect(listed).not.toBe(MOCK_MODELS);
+    expect(listed.every((card) => card.name.startsWith("Test injection"))).toBe(true);
+  });
+
+  it("holds a single-folder model and a top-down one with a folder per head, each as a source must list it", () => {
+    expect(MOCK_MODELS.map((card) => [card.id, [...filesByFolder(card.files).keys()]])).toEqual([
+      ["mock:single-instance", [""]],
+      ["mock:top-down", ["centroid", "centered_instance"]],
+    ]);
+    expect(MOCK_MODELS.map((card) => modelFilesProblem(card.heads, card.files))).toEqual([null, null]);
   });
 });
