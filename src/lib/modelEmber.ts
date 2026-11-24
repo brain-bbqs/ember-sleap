@@ -15,7 +15,7 @@ import type { ModelCard, ModelFile } from "./sleapContract";
 // derivatives/sleap/models/<model-id>/{training_config.yaml, best.ckpt}, or one per head in its
 // subfolders, models/<model-id>/<folder>/{...}, as a top-down model's centroid and
 // centered_instance; model_card.json stays in models/<model-id>/. Folders that are not one
-// top-down model's are listed as a model each.
+// top-down model's are listed as a model each. The card format is in docs/MODEL_INDEX.md.
 
 export const MODELS_PREFIX = "derivatives/sleap/models/";
 const MAX_PAGES = 20;

@@ -1,0 +1,74 @@
+{
+  "schema": "ember-sleap.models/v1",
+  "models": [
+    {
+      "id": "fly-single-instance",
+      "name": "Fly single instance",
+      "version": "1.0.0",
+      "license": "CC-BY-4.0",
+      "species": "Drosophila melanogaster",
+      "heads": ["single_instance"],
+      "skeleton": {
+        "nodes": ["head", "thorax", "abdomen", "wing_left", "wing_right"],
+        "edges": [
+          ["head", "thorax"],
+          ["thorax", "abdomen"],
+          ["thorax", "wing_left"],
+          ["thorax", "wing_right"]
+        ]
+      },
+      "source": { "huggingface": { "repo": "example-lab/fly-single-instance", "revision": "v1.0.0" } },
+      "files": [
+        {
+          "role": "config",
+          "path": "training_config.yaml",
+          "sha256": "d18063d6855dc12ff1ba0bb9d90258671da20264f0f934782b02e57694238e46"
+        },
+        {
+          "role": "checkpoint",
+          "path": "best.ckpt",
+          "sha256": "6609475a4596acd7ecc89225281d237155ab6df29a60395ead746ed119df2fef"
+        }
+      ]
+    },
+    {
+      "id": "mouse-topdown",
+      "name": "Mouse top-down",
+      "version": "2.1.0",
+      "license": "CC-BY-4.0",
+      "species": "Mus musculus",
+      "heads": ["centroid", "centered_instance"],
+      "skeleton": {
+        "nodes": ["nose", "ear_left", "ear_right", "tail_base"],
+        "edges": [
+          ["nose", "ear_left"],
+          ["nose", "ear_right"],
+          ["nose", "tail_base"]
+        ]
+      },
+      "source": { "ember": { "dandiset": "000123", "path": "derivatives/sleap/models/mouse-topdown" } },
+      "files": [
+        {
+          "role": "config",
+          "path": "centroid/training_config.yaml",
+          "sha256": "ea493c8a919db569a9e64aab4050b43e1aec3add76138633ab776c702b0d943d"
+        },
+        {
+          "role": "checkpoint",
+          "path": "centroid/best.ckpt",
+          "sha256": "425c193e1733a26c474d98ad2bcbc6fe7a68b426a2e35485d945a6eda58f8217"
+        },
+        {
+          "role": "config",
+          "path": "centered_instance/training_config.yaml",
+          "sha256": "6341b01ae9354d021539c5ae12e14f9c311221a4b865c05974f11958eafeab94"
+        },
+        {
+          "role": "checkpoint",
+          "path": "centered_instance/best.ckpt",
+          "sha256": "260ed212bc5df0f7891e9dcf377261afde751ca3ba6c7b3d1396ccbac4996400"
+        }
+      ]
+    }
+  ]
+}

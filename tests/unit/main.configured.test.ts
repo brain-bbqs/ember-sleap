@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 // The page as it will run once its outside pieces exist: an OAuth app registered on EMBER (this
-// boot is the redirect back from sign-in) and the compute proxy's URL set.
-// The two are switched on by mocking the modules that hold them; storage is a recording fake, so
+// boot is the redirect back from sign-in), the compute proxy's URL and the model index's URL set.
+// The three are switched on by mocking the modules that hold them; storage is a recording fake, so
 // this file is about main.ts's wiring, not the archive calls (main.ember.test.ts has those).
 import { jsonResponse, routeFetch, type FetchRouter } from "@brain-bbqs/test-utils/vitest";
 import { beforeAll, describe, expect, it, vi } from "vitest";
@@ -46,6 +46,10 @@ vi.mock("../../src/lib/oauth", async (importOriginal) => ({
 vi.mock("../../src/lib/computeClient", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../src/lib/computeClient")>()),
   COMPUTE_PROXY_URL: "https://proxy.example/v1",
+}));
+vi.mock("../../src/lib/modelIndex", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../src/lib/modelIndex")>()),
+  MODEL_INDEX_URL: "https://index.example/models.json",
 }));
 vi.mock("../../src/lib/emberStorage", () => ({
   createEmberStorage: (options: EmberStorageOptions) => {
@@ -119,7 +123,7 @@ beforeAll(async () => {
   await vi.waitFor(() => expect(el("project-list").hidden).toBe(false));
 });
 
-describe("main.ts once sign-in and compute are configured", () => {
+describe("main.ts once sign-in, compute and the model index are configured", () => {
   it("completes the sign-in redirect, refreshes the token once for every call at boot, and stores the fresh one", async () => {
     expect(fakes.oauth.handleRedirectCallback).toHaveBeenCalledTimes(1);
     expect(el("oauthSignedIn").hidden).toBe(false);
@@ -193,6 +197,7 @@ describe("main.ts once sign-in and compute are configured", () => {
     await vi.waitFor(() => expect(role("compute-status").textContent).toBe("No models found."));
     const warned = vi.mocked(console.warn).mock.calls.map(([message]) => String(message));
     expect(warned).toEqual(expect.arrayContaining([expect.stringContaining("Could not list models from")]));
+    expect(fetchMock.callsTo("https://index.example/models.json").length).toBe(1);
     expect(fetchMock.callsTo("huggingface.co").length).toBe(1);
     const emberModels = fetchMock.calls.filter((c) => decodeURIComponent(c.url).includes("derivatives/sleap/models/"));
     expect(emberModels.length).toBe(1);
